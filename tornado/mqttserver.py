@@ -1,24 +1,17 @@
 #!/usr/bin/python
 
-import socket
-from functools import partial
 import pdb
 
 from tornado.tcpserver import TCPServer
+from tornado.mqttconnection import MqttConnection
 
 class MqttServer(TCPServer):
 
-	def handle_read(self, buff, stream):
-		pdb.set_trace()
-		print buff
-		callback = partial(self.handle_read, stream=stream)
-		stream.read_until("0", callback)
-
 	def handle_stream(self, stream, address):
 		pdb.set_trace()
-		if not hasattr(MqttServer, 'streams'):
-			MqttServer.streams = []
-		MqttServer.streams.append(stream)
-		callback = partial(self.handle_read, stream=stream)
-		stream.read_until("0", callback)
-		
+		if not hasattr(MqttServer, 'connections'):
+			MqttServer.connections = []
+		connection = MqttConnection(self, stream, address)
+		MqttServer.connections.append(connection)
+		connection.wait_message()
+
