@@ -293,6 +293,8 @@ class HTTP1Connection(httputil.HTTPConnection):
         self._clear_callbacks()
 
     def close(self):
+	import pdb
+	pdb.set_trace()
         if self.stream is not None:
             self.stream.close()
         self._clear_callbacks()

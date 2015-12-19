@@ -171,6 +171,8 @@ class HTTPServer(TCPServer, Configurable,
             yield conn.close()
 
     def handle_stream(self, stream, address):
+	import pdb
+	pdb.set_trace()
         context = _HTTPRequestContext(stream, address,
                                       self.protocol)
         conn = HTTP1ServerConnection(
