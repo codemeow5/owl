@@ -9,7 +9,7 @@ class MqttServer(TCPServer):
 
 	def handle_stream(self, stream, address):
 		pdb.set_trace()
-		if not hasattr(MqttServer, 'connections'):
+		if not hasattr(MqttServer, 'connections'): # TODO cstree
 			MqttServer.connections = []
 		connection = MqttConnection(self, stream, address)
 		MqttServer.connections.append(connection)
