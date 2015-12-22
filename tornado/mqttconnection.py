@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import struct
+from tornado import gen
 from functools import partial
 import pdb
 
@@ -22,16 +23,17 @@ DISCONNECT = 0xE0
 
 class MqttConnection():
 
+	@gen.coroutine
 	def __read_fix_header_byte_1(self, buff):
 		pdb.set_trace()
 		pack = {}
-		buff = struct.unpack('!B', buff)
-		pack.cmd = buff
-		self.__read_remaining_length(pack)
+		(buff,) = struct.unpack('!B', buff)
+		pack['cmd'] = buff
+		yield self.__read_remaining_length(pack)
 
 	def __handle_pack(self, pack):
-		pass
-		message_type = pack.cmd & 0xF0
+		pdb.set_trace()
+		message_type = pack.get('cmd') & 0xF0
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
 			return
@@ -63,55 +65,81 @@ class MqttConnection():
 			pass
 
 	def __read_next_string(self, buff, offset):
+		pdb.set_trace()
 		if len(buff) <= offset:
 			return None
-		buffer_length = struct.unpack('!h', buff[offset:offset + 2])
-		content = struct.unpack('!%ss' % buffer_length, 
+		(buffer_length,) = struct.unpack('!h', buff[offset:offset + 2])
+		(content,) = struct.unpack('!%ss' % buffer_length, 
 			buff[offset + 2:offset + 2 + buffer_length])
 		return (content, offset + 2 + buffer_length)
 
+	@gen.coroutine
 	def __handle_connect(self, pack):
-		remaining_buffer = pack.remaining_buffer
-		protocol_version = remaining_buffer[8]
+		pdb.set_trace()
+		payload_length = pack.get('remaining_length') - 12
+		remaining_buffer_format = '!H6s2BH%ss' % payload_length
+		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
+		protocol_version = pack['protocol_version'] = remaining_buffer_tuple[2]
+		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		if protocol_version <> 0x3:
-			# TODO reply connack message and disconnect
+			yield self.__send_connack(0x1)
 			self.close()
-		(client_id, offset) = self.__read_next_string(remaining_buffer, 12)
+		(client_id, offset) = self.__read_next_string(payload, 0)
 		if len(client_id) > 23:
-			# TODO reply connack message and disconnect
+			yield self.__send_connack(0x2)
 			self.close()
-		connect_flags = remaining_buffer[9]
+		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
 		if connect_flags & 0x4 == 0x4:
 		# If the Will Flag is set to 1
 			will_qos = connect_flags & 0x18 >> 3
 			will_retain = connect_flags & 0x20 >> 5
-			(will_topic, offset) = self.__read_next_string(remaining_buffer, offset)
-			(will_message, offset) = self.__read_next_string(remaining_buffer, offset)
-			#TODO here
-		# TODO
+			(will_topic, offset) = self.__read_next_string(payload, offset)
+			(will_message, offset) = self.__read_next_string(payload, offset)
+		if connect_flags & 0x80 == 0x80:
+		# If the User name flag is set to 1
+			(username, offset) = self.__read_next_string(payload, offset)
+			if connect_flags & 0x40 == 0x40:
+			# If the Password flag is set to 1
+				(password, offset) = self.__read_next_string(payload, offset)
+		yield self.__send_connack(0x0)
+
+	@gen.coroutine
+	def __send_connack(self, code):
+		pdb.set_trace()
+		packet = bytearray()
+		packet.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
+		packet = str(packet)
+		yield self.stream.write(packet)
+		pdb.set_trace()
 
 	def close(self):
 		# TODO remove from cstree
 		pass
 
+	@gen.coroutine
 	def __read_remaining_buffer(self, pack):
-		buff = self.stream.read_bytes(pack.remaining_length)
-		buff = struct.unpack('!%sB' % pack.remaining_length, buff)
-		pack.remaining_buffer = buff
+		pdb.set_trace()
+		buff = yield self.stream.read_bytes(pack.get('remaining_length'))
+		pdb.set_trace()
+		pack['remaining_buffer'] = buff
 		self.wait_message() # Waits for the next message
 		self.__handle_pack(pack)
 
+	@gen.coroutine
 	def __read_remaining_length(self, pack):
+		pdb.set_trace()
 		multiplier = 1
 		value = 0
 		while True:
 			digit = yield self.stream.read_bytes(1)
+			pdb.set_trace()
+			(digit,) = struct.unpack('!B', digit)
 			value += (digit & 127) * multiplier
 			multiplier *= 128
-			if ((digit & 128) == 0)
+			if ((digit & 128) == 0):
 				break
-		pack.remaining_length = value
-		self.__read_remaining_buffer(value, pack)
+		pack['remaining_length'] = value
+		yield self.__read_remaining_buffer(pack)
 
 	def __init__(self, server, stream, address):
 		self.server = server
@@ -120,6 +148,7 @@ class MqttConnection():
 		pass
 
 	def wait_message(self):
+		pdb.set_trace()
 		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
 
 
