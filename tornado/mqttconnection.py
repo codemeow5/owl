@@ -50,7 +50,8 @@ class MqttConnection():
 		if message_type == PUBCOMP:
 			pass
 		if message_type == SUBSCRIBE:
-			pass
+			self.__handle_subscribe(pack)
+			return
 		if message_type == SUBACK:
 			pass
 		if message_type == UNSUBSCRIBE:
@@ -72,6 +73,33 @@ class MqttConnection():
 		(content,) = struct.unpack('!%ss' % buffer_length, 
 			buff[offset + 2:offset + 2 + buffer_length])
 		return (content, offset + 2 + buffer_length)
+
+	def __read_next_buffer(self, buff, offset, length):
+		pdb.set_trace()
+		if len(buff) <= offset:
+			return None
+		buff_tuple = struct.unpack('!%sB' % length, buff[offset: offset + length])
+		return (buff_tuple, offset + length)
+
+	@gen.coroutine
+	def __handle_subscribe(self, pack):
+		pdb.set_trace()
+		if self.state <> 'CONNECTED':
+			# TODO disconnect the client
+			self.close()
+			return
+		payload_length = pack.get('remaining_length') - 2
+		remaining_buffer_format = '!H%ss' % payload_length
+		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
+		message_id = pack['message_id'] = remaining_buffer_tuple[0]
+		payload = pack['payload'] = remaining_buffer_tuple[-1]
+		while True:
+			(topic, offset) = self.__read_next_string(payload, 0)
+			if topic is None:
+				break
+			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
+			self.server.subscribe(self, topic, qos)
+		# TODO response SUBACK
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
@@ -102,6 +130,8 @@ class MqttConnection():
 			# If the Password flag is set to 1
 				(password, offset) = self.__read_next_string(payload, offset)
 		yield self.__send_connack(0x0)
+		self.state = 'CONNECTED'
+		self.client_id = client_id
 
 	@gen.coroutine
 	def __send_connack(self, code):
@@ -113,8 +143,10 @@ class MqttConnection():
 		pdb.set_trace()
 
 	def close(self):
+		self.state = 'CLOSING'
 		# TODO remove from cstree
 		pass
+		self.state = 'CLOSED'
 
 	@gen.coroutine
 	def __read_remaining_buffer(self, pack):
@@ -145,6 +177,9 @@ class MqttConnection():
 		self.server = server
 		self.stream = stream
 		self.address = address
+
+		self.state = 'CONNECTING'
+		self.client_id = None
 		pass
 
 	def wait_message(self):
