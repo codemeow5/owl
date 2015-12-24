@@ -65,7 +65,7 @@ class MqttConnection():
 
 	def __read_next_string(self, buff, offset):
 		if len(buff) <= offset:
-			return None
+			return (None, offset)
 		(buffer_length,) = struct.unpack('!h', buff[offset:offset + 2])
 		(content,) = struct.unpack('!%ss' % buffer_length, 
 			buff[offset + 2:offset + 2 + buffer_length])
@@ -73,7 +73,7 @@ class MqttConnection():
 
 	def __read_next_buffer(self, buff, offset, length):
 		if len(buff) <= offset:
-			return None
+			return (None, offset)
 		buff_tuple = struct.unpack('!%sB' % length, buff[offset: offset + length])
 		return (buff_tuple, offset + length)
 
@@ -90,8 +90,9 @@ class MqttConnection():
 		message_id = pack['message_id'] = remaining_buffer_tuple[0]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		qoss = []
+		offset = 0
 		while True:
-			(topic, offset) = self.__read_next_string(payload, 0)
+			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
@@ -116,6 +117,7 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
+		pdb.set_trace()
 		payload_length = pack.get('remaining_length') - 12
 		remaining_buffer_format = '!H6s2BH%ss' % payload_length
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
