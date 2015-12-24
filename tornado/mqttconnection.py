@@ -25,14 +25,12 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __read_fix_header_byte_1(self, buff):
-		pdb.set_trace()
 		pack = {}
 		(buff,) = struct.unpack('!B', buff)
 		pack['cmd'] = buff
 		yield self.__read_remaining_length(pack)
 
 	def __handle_pack(self, pack):
-		pdb.set_trace()
 		message_type = pack.get('cmd') & 0xF0
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
@@ -66,7 +64,6 @@ class MqttConnection():
 			pass
 
 	def __read_next_string(self, buff, offset):
-		pdb.set_trace()
 		if len(buff) <= offset:
 			return None
 		(buffer_length,) = struct.unpack('!h', buff[offset:offset + 2])
@@ -75,7 +72,6 @@ class MqttConnection():
 		return (content, offset + 2 + buffer_length)
 
 	def __read_next_buffer(self, buff, offset, length):
-		pdb.set_trace()
 		if len(buff) <= offset:
 			return None
 		buff_tuple = struct.unpack('!%sB' % length, buff[offset: offset + length])
@@ -93,17 +89,33 @@ class MqttConnection():
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
 		message_id = pack['message_id'] = remaining_buffer_tuple[0]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
+		qoss = []
 		while True:
 			(topic, offset) = self.__read_next_string(payload, 0)
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
-			self.server.subscribe(self, topic, qos)
+			qoss.append(self.server.subscribe(self, topic, qos))
 		# TODO response SUBACK
+		yield self.__send_suback(message_id, qoss)
+
+	@gen.coroutine
+	def __send_suback(self, message_id, qoss):
+		pdb.set_trace()
+		payload = bytearray()
+		for qos in qoss:
+			payload.extend(struct.pack('!B', qos))
+		remaining_length = 2 + len(payload)
+		packet = bytearray()
+		packet.extend(struct.pack('!B', SUBACK))
+		packet.extend(self.__write_remaining_length(remaining_length))
+		packet.extend(struct.pack('!H', message_id))
+		packet.extend(payload)
+		packet = str(packet)
+		yield self.stream.write(packet)
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
-		pdb.set_trace()
 		payload_length = pack.get('remaining_length') - 12
 		remaining_buffer_format = '!H6s2BH%ss' % payload_length
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
@@ -135,12 +147,10 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_connack(self, code):
-		pdb.set_trace()
 		packet = bytearray()
 		packet.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
 		packet = str(packet)
 		yield self.stream.write(packet)
-		pdb.set_trace()
 
 	def close(self):
 		self.state = 'CLOSING'
@@ -150,21 +160,17 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __read_remaining_buffer(self, pack):
-		pdb.set_trace()
 		buff = yield self.stream.read_bytes(pack.get('remaining_length'))
-		pdb.set_trace()
 		pack['remaining_buffer'] = buff
 		self.wait_message() # Waits for the next message
 		self.__handle_pack(pack)
 
 	@gen.coroutine
 	def __read_remaining_length(self, pack):
-		pdb.set_trace()
 		multiplier = 1
 		value = 0
 		while True:
 			digit = yield self.stream.read_bytes(1)
-			pdb.set_trace()
 			(digit,) = struct.unpack('!B', digit)
 			value += (digit & 127) * multiplier
 			multiplier *= 128
@@ -172,6 +178,18 @@ class MqttConnection():
 				break
 		pack['remaining_length'] = value
 		yield self.__read_remaining_buffer(pack)
+	
+	def __write_remaining_length(self, length):
+		packet = bytearray()
+		while True:
+			digit = length % 128
+			length = length / 128
+			if length > 0:
+				digit = digit | 0x80
+			packet.extend(struct.pack('!B', digit))
+			if length == 0:
+				break
+		return packet
 
 	def __init__(self, server, stream, address):
 		self.server = server
@@ -183,7 +201,6 @@ class MqttConnection():
 		pass
 
 	def wait_message(self):
-		pdb.set_trace()
 		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
 
 

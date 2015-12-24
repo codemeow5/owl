@@ -8,6 +8,7 @@ from tornado.mqttconnection import MqttConnection
 class MqttServer(TCPServer):
 
 	def __init__(self):
+		TCPServer.__init__(self)
 		self.__topic_dict = {}
 		# The structure of self.__topic_dict is shown below 
 		# { topic: { client_id: MqttConnection } }
@@ -25,6 +26,7 @@ class MqttServer(TCPServer):
 			subs_dict = self.__topic_dict.get(topic)
 		subs_dict[client_id] = connection
 		# TODO persistence
+		return qos # possible downgrade
 
 	def unsubscribe(self, connection, topic):
 		client_id = connection.client_id
