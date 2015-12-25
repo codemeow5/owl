@@ -32,6 +32,7 @@ class MqttConnection():
 
 	def __handle_pack(self, pack):
 		message_type = pack.get('cmd') & 0xF0
+		pdb.set_trace()
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
 			return
