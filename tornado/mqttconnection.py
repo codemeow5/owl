@@ -147,6 +147,7 @@ class MqttConnection():
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		self.client_id = client_id
+		self.server.register(self)
 
 	@gen.coroutine
 	def __send_connack(self, code):
