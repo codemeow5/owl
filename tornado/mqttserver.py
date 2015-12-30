@@ -41,7 +41,7 @@ class MqttServer(TCPServer):
 				self.__TOPICS__.pop(topic)
 		# TODO persistence
 
-	def publish(self, topic, message):
+	def publish(self, topic, payload):
 		pass
 
 	def handle_stream(self, stream, address):

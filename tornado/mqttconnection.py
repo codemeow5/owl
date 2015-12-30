@@ -38,7 +38,8 @@ class MqttConnection():
 		if message_type == CONNACK:
 			pass
 		if message_type == PUBLISH:
-			pass
+			self.__handle_publish(pack)
+			return
 		if message_type == PUBACK:
 			pass
 		if message_type == PUBREC:
@@ -63,7 +64,14 @@ class MqttConnection():
 		if message_type == PINGRESP:
 			pass
 		if message_type == DISCONNECT:
-			pass
+			self.__handle_disconnect(pack)
+			return
+
+	def __read_next_string_length(self, buff, offset):
+		if len(buff) <= offset:
+			return None
+		(length,) = struct.unpack('!h', buff[offset:offset + 2])
+		return length
 
 	def __read_next_string(self, buff, offset):
 		if len(buff) <= offset:
@@ -133,6 +141,40 @@ class MqttConnection():
 			self.server.unsubscribe(self, topic)
 		# TODO response UNSUBACK
 		yield self.__send_unsuback(message_id)
+
+	@gen.coroutine
+	def __handle_publish(self, pack):
+		pdb.set_trace()
+		if self.state <> 'CONNECTED':
+			# TODO disconnect the client
+			self.close()
+			return
+		remaining_buffer = pack.get('remaining_buffer')
+		topic_length = self.__read_next_string_length(remaining_buffer, 0)
+		payload_length = pack.get('remaining_length') - 2 - topic_length - 2
+		remaining_buffer_format = '!H%ssH%ss' % (topic_length, payload_length)
+		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, remaining_buffer)
+		topic = pack['topic'] = remaining_buffer_tuple[1]
+		message_id = pack['message_id'] = remaining_buffer_tuple[2]
+		payload = pack['payload'] = remaining_buffer_tuple[-1]
+		self.server.publish(topic, payload)
+		# TODO reply
+
+	@gen.coroutine
+	def __send_publish(self, dup, qos, retain, topic, message_id, payload):
+		pdb.set_trace()
+		payload_ = bytearray()
+		payload_.extend(struct.pack('!%ss' % len(payload), payload))
+		topic_string_length = len(topic)
+		topic_ = struct.pack('!%ss' % topic_string_length, topic)
+		packet = bytearray()
+		byte1 = PUBLISH | dup * 1000 | qos * 10 | retain
+		# TODO
+		pass
+
+	@gen.coroutine
+	def __handle_disconnect(self, pack):
+		self.close()
 
 	@gen.coroutine
 	def __send_unsuback(self, message_id):
