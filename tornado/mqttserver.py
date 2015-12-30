@@ -46,5 +46,6 @@ class MqttServer(TCPServer):
 
 	def handle_stream(self, stream, address):
 		pdb.set_trace()
+		connection = MqttConnection(self, stream, address)
 		connection.wait_message()
 

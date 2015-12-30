@@ -32,7 +32,6 @@ class MqttConnection():
 
 	def __handle_pack(self, pack):
 		message_type = pack.get('cmd') & 0xF0
-		pdb.set_trace()
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
 			return
@@ -54,11 +53,13 @@ class MqttConnection():
 		if message_type == SUBACK:
 			pass
 		if message_type == UNSUBSCRIBE:
-			pass
+			self.__handle_unsubscribe(pack)
+			return
 		if message_type == UNSUBACK:
 			pass
 		if message_type == PINGREQ:
-			pass
+			self.__handle_pingreq(pack)
+			return
 		if message_type == PINGRESP:
 			pass
 		if message_type == DISCONNECT:
@@ -77,6 +78,17 @@ class MqttConnection():
 			return (None, offset)
 		buff_tuple = struct.unpack('!%sB' % length, buff[offset: offset + length])
 		return (buff_tuple, offset + length)
+
+	@gen.coroutine
+	def __handle_pingreq(self, pack):
+		yield self.__send_pingresp()
+
+	@gen.coroutine
+	def __send_pingresp(self):
+		packet = bytearray()
+		packet.extend(struct.pack('!2B', PINGRESP, 0))
+		packet = str(packet)
+		yield self.stream.write(packet)
 
 	@gen.coroutine
 	def __handle_subscribe(self, pack):
@@ -100,6 +112,36 @@ class MqttConnection():
 			qoss.append(self.server.subscribe(self, topic, qos))
 		# TODO response SUBACK
 		yield self.__send_suback(message_id, qoss)
+
+	@gen.coroutine
+	def __handle_unsubscribe(self, pack):
+		pdb.set_trace()
+		if self.state <> 'CONNECTED':
+			# TODO disconnect the client
+			self.close()
+			return
+		payload_length = pack.get('remaining_length') - 2
+		remaining_buffer_format = '!H%ss' % payload_length
+		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
+		message_id = pack['message_id'] = remaining_buffer_tuple[0]
+		payload = pack['payload'] = remaining_buffer_tuple[-1]
+		offset = 0
+		while True:
+			(topic, offset) = self.__read_next_string(payload, offset)
+			if topic is None:
+				break
+			self.server.unsubscribe(self, topic)
+		# TODO response UNSUBACK
+		yield self.__send_unsuback(message_id)
+
+	@gen.coroutine
+	def __send_unsuback(self, message_id):
+		pdb.set_trace()
+		packet = bytearray()
+		packet.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
+		packet = str(packet)
+		yield self.stream.write(packet)
+		pdb.set_trace()
 
 	@gen.coroutine
 	def __send_suback(self, message_id, qoss):
