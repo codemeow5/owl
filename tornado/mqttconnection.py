@@ -21,6 +21,13 @@ PINGREQ = 0xC0
 PINGRESP = 0xD0
 DISCONNECT = 0xE0
 
+# QoS Level
+
+QoS0 = 0x0
+QoS1 = 0x2
+QoS2 = 0x4
+QoS3 = 0x6
+
 class MqttConnection():
 
 	@gen.coroutine
@@ -148,7 +155,7 @@ class MqttConnection():
 		if self.state <> 'CONNECTED':
 			# TODO disconnect the client
 			self.close()
-			return
+			return gen.Return(None)
 		remaining_buffer = pack.get('remaining_buffer')
 		topic_length = self.__read_next_string_length(remaining_buffer, 0)
 		payload_length = pack.get('remaining_length') - 2 - topic_length - 2
@@ -157,20 +164,41 @@ class MqttConnection():
 		topic = pack['topic'] = remaining_buffer_tuple[1]
 		message_id = pack['message_id'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
-		self.server.publish(topic, payload)
+		qos = pack.get('cmd') & 0x6
+		if qos == QoS2:
+			# TODO response PUBREC
+			pass
+		self.server.publish(topic, payload, qos)
 		# TODO reply
+		if qos == QoS0:
+			return gen.Return(None)
+		if qos == QoS1:
+			# TODO response PUBACK
+			pass
+
+	def __send_puback(self, pack):
+		pass
 
 	@gen.coroutine
-	def __send_publish(self, dup, qos, retain, topic, message_id, payload):
+	def send_publish(self, dup, qos, retain, topic, message_id, payload):
 		pdb.set_trace()
 		payload_ = bytearray()
 		payload_.extend(struct.pack('!%ss' % len(payload), payload))
-		topic_string_length = len(topic)
-		topic_ = struct.pack('!%ss' % topic_string_length, topic)
+		topic_ = bytearray()
+		bare_topic_ = struct.pack('!%ss' % len(topic), topic)
+		topic_.extend(struct.pack('!H', len(bare_topic_)))
+		topic_.extend(bare_topic_)
+		variable_header_length = len(topic_) + 2
+		remaining_buffer_length = variable_header_length + len(payload_)
 		packet = bytearray()
-		byte1 = PUBLISH | dup * 1000 | qos * 10 | retain
-		# TODO
-		pass
+		byte1 = PUBLISH | dup | qos | retain
+		packet.extend(struct.pack('!B', byte1))
+		remaining_buffer_length_ = self.__write_remaining_length(remaining_buffer_length)
+		packet.extend(remaining_buffer_length_)
+		packet.extend(topic_)
+		packet.extend(struct.pack('!H', message_id))
+		packet.extend(payload_)
+		yield self.stream.write(packet)
 
 	@gen.coroutine
 	def __handle_disconnect(self, pack):

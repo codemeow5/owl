@@ -25,7 +25,7 @@ class MqttServer(TCPServer):
 		subs_dict = None
 		if not topic in self.__TOPICS__:
 			subs_dict = {}
-			self.__TOPICS__[topic] = subs_dict
+			self.__TOPICS__[topic] = subs_dict # TODO match topics
 		else:
 			subs_dict = self.__TOPICS__.get(topic)
 		subs_dict[client_id] = connection
@@ -41,8 +41,14 @@ class MqttServer(TCPServer):
 				self.__TOPICS__.pop(topic)
 		# TODO persistence
 
-	def publish(self, topic, payload):
-		pass
+	def publish(self, topic, payload, qos):
+		sublist = self.__TOPICS__.get(topic, None)
+		if sublist is None:
+			return
+		for (client_id, connection) in sublist.items():
+			if connection.state <> 'CONNECTED':
+				continue
+			yield connection.send_publish(0, qos, 0, topic, 1000, payload) # TODO
 
 	def handle_stream(self, stream, address):
 		pdb.set_trace()
