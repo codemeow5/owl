@@ -2,8 +2,12 @@
 
 import struct
 from tornado import gen
+from tornado.ioloop import IOLoop
 from functools import partial
 import pdb
+
+# Constant
+WAIT_TIME = 60
 
 # Message types
 CONNECT = 0x10
@@ -22,7 +26,6 @@ PINGRESP = 0xD0
 DISCONNECT = 0xE0
 
 # QoS Level
-
 QoS0 = 0x0
 QoS1 = 0x2
 QoS2 = 0x4
@@ -42,8 +45,6 @@ class MqttConnection():
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
 			return
-		if message_type == CONNACK:
-			pass
 		if message_type == PUBLISH:
 			self.__handle_publish(pack)
 			return
@@ -57,22 +58,17 @@ class MqttConnection():
 			self.__handle_pubrel(pack)
 			return
 		if message_type == PUBCOMP:
-			pass
+			self.__handle_pubcomp(pack)
+			return
 		if message_type == SUBSCRIBE:
 			self.__handle_subscribe(pack)
 			return
-		if message_type == SUBACK:
-			pass
 		if message_type == UNSUBSCRIBE:
 			self.__handle_unsubscribe(pack)
 			return
-		if message_type == UNSUBACK:
-			pass
 		if message_type == PINGREQ:
 			self.__handle_pingreq(pack)
 			return
-		if message_type == PINGRESP:
-			pass
 		if message_type == DISCONNECT:
 			self.__handle_disconnect(pack)
 			return
@@ -298,6 +294,7 @@ class MqttConnection():
 	@gen.coroutine
 	def __handle_connect(self, pack):
 		pdb.set_trace()
+		self.state = 'CONNECTING'
 		payload_length = pack.get('remaining_length') - 12
 		remaining_buffer_format = '!H6s2BH%ss' % payload_length
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
@@ -306,10 +303,12 @@ class MqttConnection():
 		if protocol_version <> 0x3:
 			yield self.__send_connack(0x1)
 			self.close()
+			gen.Return(None)
 		(client_id, offset) = self.__read_next_string(payload, 0)
 		if len(client_id) > 23:
 			yield self.__send_connack(0x2)
 			self.close()
+			gen.Return(None)
 		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
 		if connect_flags & 0x4 == 0x4:
 		# If the Will Flag is set to 1
@@ -337,9 +336,7 @@ class MqttConnection():
 
 	def close(self):
 		self.state = 'CLOSING'
-		# TODO remove from cstree
-		pass
-		self.state = 'CLOSED'
+		self.stream.close()
 
 	@gen.coroutine
 	def __read_remaining_buffer(self, pack):
@@ -374,6 +371,9 @@ class MqttConnection():
 				break
 		return packet
 
+	def __close_callback(self):
+		self.state = 'CLOSED'
+
 	def __init__(self, server, stream, address):
 		self.server = server
 		self.stream = stream
@@ -381,12 +381,22 @@ class MqttConnection():
 		self.incoming_messages = {}
 		self.outgoing_messages = {}
 
-		self.state = 'CONNECTING'
+		self.state = 'INITIALIZE'
+		self.set_close_callback(self.__close_callback)
 		self.client_id = None
-		pass
 
 	def wait_message(self):
+		def callback():
+			if self.state == 'INITIALIZE':
+				self.close()
+		IOLoop.current().call_later(WAIT_TIME, callback)
 		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
+
+
+
+
+
+
 
 
 
