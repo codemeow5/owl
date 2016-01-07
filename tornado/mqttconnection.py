@@ -38,7 +38,7 @@ class MqttConnection():
 		yield self.__read_remaining_length(pack)
 
 	def __handle_pack(self, pack):
-		message_type = pack.get('cmd') & 0xF0
+		message_type = pack['message_type'] = pack.get('cmd') & 0xF0
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
 			return
@@ -48,11 +48,14 @@ class MqttConnection():
 			self.__handle_publish(pack)
 			return
 		if message_type == PUBACK:
-			pass
+			self.__handle_puback(pack)
+			return
 		if message_type == PUBREC:
-			pass
+			self.__handle_pubrec(pack)
+			return
 		if message_type == PUBREL:
-			pass
+			self.__handle_pubrel(pack)
+			return
 		if message_type == PUBCOMP:
 			pass
 		if message_type == SUBSCRIBE:
@@ -164,18 +167,48 @@ class MqttConnection():
 		topic = pack['topic'] = remaining_buffer_tuple[1]
 		message_id = pack['message_id'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
-		qos = pack.get('cmd') & 0x6
+		qos = pack['qos'] = pack.get('cmd') & 0x6
+		self.incoming_messages[message_id] = pack
+		# TODO reply
+		if qos == QoS0:
+			self.server.publish(topic, payload, qos)
+			return gen.Return(None)
+		if qos == QoS1:
+			self.server.publish(topic, payload, qos)
+			yield self.__send_puback(message_id)
+			return gen.Return(None)
 		if qos == QoS2:
 			# TODO response PUBREC
 			yield self.__send_pubrec(message_id)
-		self.server.publish(topic, payload, qos)
-		# TODO reply
-		if qos == QoS0:
 			return gen.Return(None)
-		if qos == QoS1:
-			# TODO response PUBACK
-			yield self.__send_puback(message_id)
-	
+
+	@gen.coroutine
+	def __handle_puback(self, pack):
+		pdb.set_trace()
+		# TODO what to do?
+		pass
+
+	@gen.coroutine
+	def __handle_pubrec(self, pack):
+		pdb.set_trace()
+		# TODO what to do?
+		pass
+
+	@gen.coroutine
+	def __handle_pubrel(self, pack):
+		pdb.set_trace()
+		remaining_buffer = pack.get('remaining_buffer')
+		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
+		pack = self.incoming_messages.get(message_id, None)
+		if pack is None:
+			# TODO pack is missing
+			return
+		topic = pack.get('topic')
+		payload = pack.get('payload')
+		qos = pack.get('qos')
+		self.server.publish(topic, payload, qos)
+		yield self.__send_pubcomp(message_id)
+
 	@gen.coroutine
 	def __send_pubrec(self, message_id):
 		pdb.set_trace()
@@ -189,6 +222,14 @@ class MqttConnection():
 		pdb.set_trace()
 		packet = bytearray()
 		packet.extend(struct.pack('!2B', PUBACK, 2))
+		packet.extend(struct.pack('!H', message_id))
+		yield self.stream.write(packet)
+
+	@gen.coroutine
+	def __send_pubcomp(self, message_id):
+		pdb.set_trace()
+		packet = bytearray()
+		packet.extend(struct.pack('!2B', PUBCOMP, 2))
 		packet.extend(struct.pack('!H', message_id))
 		yield self.stream.write(packet)
 
@@ -324,6 +365,8 @@ class MqttConnection():
 		self.server = server
 		self.stream = stream
 		self.address = address
+		self.incoming_messages = {}
+		self.outgoing_messages = {}
 
 		self.state = 'CONNECTING'
 		self.client_id = None
