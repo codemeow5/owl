@@ -310,7 +310,8 @@ class MqttConnection():
 			self.close()
 			gen.Return(None)
 		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
-		if connect_flags & 0x4 == 0x4:
+		will_flag = connect_flags & 0x4 == 0x4
+		if will_flag:
 		# If the Will Flag is set to 1
 			will_qos = connect_flags & 0x18 >> 3
 			will_retain = connect_flags & 0x20 >> 5
@@ -325,6 +326,11 @@ class MqttConnection():
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		self.client_id = client_id
+		self.will_flag = will_flag
+		self.will_qos = will_qos
+		self.will_retain = will_retain
+		self.will_topic = will_topic
+		self.will_message = will_message
 		self.server.register(self)
 
 	@gen.coroutine
@@ -373,6 +379,10 @@ class MqttConnection():
 
 	def __close_callback(self):
 		self.state = 'CLOSED'
+		if self.stream.error is not None:
+			if self.will_flag:
+				# TODO Will Retain not implemented
+				self.server.publish(self.will_topic, self.will_message, self.will_qos)
 
 	def __init__(self, server, stream, address):
 		self.server = server
