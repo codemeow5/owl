@@ -68,10 +68,39 @@ class MqttServer(TCPServer):
 			message_id = self.fetch_message_id()
 			yield connection.send_publish(0, qos, 0, topic, message_id, payload) # TODO
 
-	def wildcards(self, topic):
+	def wildcards(topic):
 		"""Calculate topic wildcards
 		"""
-		sections = topic.split('\\')
+		sections = topic.split('/')
+		length = len(sections)
+		topics = []
+		pre_level = ['']
+		for level in range(length + 1):
+			section = None
+			if level < length:
+				section = sections[level]
+			is_last_section = False
+			if level + 1 == length:
+				is_last_section = True
+			pre_level_ = []
+			for s in pre_level:
+				if section is not None:
+					new_topic = s + '/' + section if len(s) > 0 else section
+					if is_last_section:
+						topics.append(new_topic)
+						pre_level_.append(new_topic)
+					else:
+						pre_level_.append(new_topic)
+				new_topic = s + '/' + '#' if len(s) > 0 else '#'
+				topics.append(new_topic)
+				new_topic = s + '/' + '+' if len(s) > 0 else '+'
+				if is_last_section:
+					topics.append(new_topic)
+					pre_level_.append(new_topic)
+				else:
+					pre_level_.append(new_topic)
+				pre_level = pre_level_
+		return topics
 
 	def handle_stream(self, stream, address):
 		pdb.set_trace()
