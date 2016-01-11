@@ -123,7 +123,7 @@ class MqttConnection():
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
-			qoss.append(self.server.subscribe(self, topic, qos))
+			qoss.append(self.subscribe(self, topic, qos))
 		# TODO response SUBACK
 		yield self.__send_suback(message_id, qoss)
 
@@ -144,7 +144,7 @@ class MqttConnection():
 			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
-			self.server.unsubscribe(self, topic)
+			self.unsubscribe(self, topic)
 		# TODO response UNSUBACK
 		yield self.__send_unsuback(message_id)
 
@@ -164,17 +164,17 @@ class MqttConnection():
 		message_id = pack['message_id'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		qos = pack['qos'] = pack.get('cmd') & 0x6
-		self.incoming_messages[message_id] = pack
 		# TODO reply
 		if qos == QoS0:
-			self.server.publish(topic, payload, qos)
+			self.deliver(pack)
 			return gen.Return(None)
 		if qos == QoS1:
-			self.server.publish(topic, payload, qos)
+			self.deliver(pack)
 			yield self.__send_puback(message_id)
 			return gen.Return(None)
 		if qos == QoS2:
 			# TODO response PUBREC
+			self.unreleased_deliveries[message_id] = pack
 			yield self.__send_pubrec(message_id)
 			return gen.Return(None)
 
@@ -200,14 +200,9 @@ class MqttConnection():
 		pdb.set_trace()
 		remaining_buffer = pack.get('remaining_buffer')
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
-		pack = self.incoming_messages.get(message_id, None)
-		if pack is None:
-			# TODO pack is missing
-			return
-		topic = pack.get('topic')
-		payload = pack.get('payload')
-		qos = pack.get('qos')
-		self.server.publish(topic, payload, qos)
+		pack = self.unreleased_deliveries.get(message_id, None)
+		delivery = self.unreleased_deliveries.pop(message_id, None)
+		self.deliver(delivery)
 		yield self.__send_pubcomp(message_id)
 
 	@gen.coroutine
@@ -262,6 +257,16 @@ class MqttConnection():
 		packet.extend(struct.pack('!H', message_id))
 		packet.extend(payload_)
 		yield self.stream.write(packet)
+
+	@gen.coroutine
+	def deliver(self, delivery):
+		yield self.server.deliver(delivery)
+
+	def subscribe(self, topic, qos):
+		self.server.subscribe(self, topic, qos)
+
+	def unsubscribe(self, topic):
+		self.server.unsubscribe(self, topic)
 
 	@gen.coroutine
 	def __handle_disconnect(self, pack):
@@ -382,24 +387,37 @@ class MqttConnection():
 		if self.stream.error is not None:
 			if self.will_flag:
 				# TODO Will Retain not implemented
-				self.server.publish(self.will_topic, self.will_message, self.will_qos)
+				self.deliver({
+					'topic': self.will_topic,
+					'qos': self.will_qos,
+					'payload': self.will_message
+					})
 
 	def __init__(self, server, stream, address):
 		self.server = server
 		self.stream = stream
 		self.address = address
-		self.incoming_messages = {}
+		# Unreleased Deliveries 
+		# Key: Message Id
+		# Value: Delivery(Include topic, qos, payload)
+		self.unreleased_deliveries = {}
 		self.outgoing_messages = {}
+
+		self.retry_time = 60 # seconds
 
 		self.state = 'INITIALIZE'
 		self.set_close_callback(self.__close_callback)
 		self.client_id = None
 
-	def wait_message(self):
+	def wait(self):
 		def callback():
 			if self.state == 'INITIALIZE':
 				self.close()
 		IOLoop.current().call_later(WAIT_TIME, callback)
+		# TODO Keep Alive timer not implemented
+		self.wait_message()
+
+	def wait_message(self):
 		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
 
 
