@@ -59,14 +59,18 @@ class MqttServer(TCPServer):
 			gen.Return(None)
 		payload = delivery.get('payload', None)
 		# TODO calculate topic wildcards
-		subscribers = self.__SUBSCRIBES__.get(topic, None)
-		if subscribers is None:
-			gen.Return(None)
-		for (client_id, connection) in subscribers.items():
-			if connection.state <> 'CONNECTED':
+		topics = self.wildcards(topic)
+		for topic_ in topics:
+			subscribers = self.__SUBSCRIBES__.get(topic_, None)
+			if subscribers is None:
 				continue
-			message_id = self.fetch_message_id()
-			yield connection.send_publish(0, qos, 0, topic, message_id, payload) # TODO
+			for (client_id, (connection, qos_)) in subscribers.items():
+				if connection is None or connection.state <> 'CONNECTED':
+					continue
+				message_id = self.fetch_message_id()
+				if qos_ < qos:
+					qos = qos_
+				yield connection.send_publish(0, qos, 0, topic, message_id, payload) # TODO
 
 	def wildcards(topic):
 		"""Calculate topic wildcards
