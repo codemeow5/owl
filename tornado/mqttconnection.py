@@ -3,6 +3,7 @@
 import struct
 from tornado import gen
 from tornado.ioloop import IOLoop
+from tornado.queues import Queue
 from functools import partial
 import pdb
 
@@ -401,13 +402,16 @@ class MqttConnection():
 		# Key: Message Id
 		# Value: Delivery(Include topic, qos, payload)
 		self.unreleased_deliveries = {}
-		self.outgoing_messages = {}
+		self.outgoing_messages = Queue()
 
 		self.retry_time = 60 # seconds
 
 		self.state = 'INITIALIZE'
 		self.set_close_callback(self.__close_callback)
 		self.client_id = None
+
+	def wait_message(self):
+		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
 
 	def wait(self):
 		def callback():
@@ -416,11 +420,22 @@ class MqttConnection():
 		IOLoop.current().call_later(WAIT_TIME, callback)
 		# TODO Keep Alive timer not implemented
 		self.wait_message()
+		# Async emit loop
+		IOLoop.current().spawn_callback(self.emit_loop)
 
-	def wait_message(self):
-		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
+	@gen.coroutine
+	def emit_loop(self):
+		while True:
+			pack = yield self.outgoing_messages.get()
+			try:
+				yield self.stream.write(pack) # TODO complex struct and deliver retry
+			finally:
+				self.outgoing_messages.task_done()
 
-
+	def write(self, pack):
+		""" no wait write
+		"""
+		self.outgoing_messages.put_nowait(pack)
 
 
 
