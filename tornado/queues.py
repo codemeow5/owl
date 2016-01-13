@@ -324,6 +324,29 @@ class PriorityQueue(Queue):
     def _get(self):
         return heapq.heappop(self._queue)
 
+class PriorityQueue2(Queue):
+	""" Added a dictionary on the basis of \"PriorityQueue\"
+	"""
+	def _init(self):
+		self._queue = []
+		self._dict = {}
+
+	def _put(self, item):
+		heapq.heappush(self._queue, item)
+		key = item[0]
+		value = item[1]
+		if key is not None:
+			self._dict[key] = value
+
+	def get_nopop(self, key):
+		return self._dict.get(key, None)
+
+	def _get(self):
+		item = heapq.heappop(self._queue)
+		key = item[0]
+		self._dict.pop(key, None)
+		return item
+
 
 class LifoQueue(Queue):
     """A `.Queue` that retrieves the most recently put items first.

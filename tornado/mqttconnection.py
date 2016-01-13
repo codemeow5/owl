@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
 import struct
+import time
 from tornado import gen
 from tornado.ioloop import IOLoop
 from tornado.queues import Queue
+from tornado.queues import PriorityQueue2
 from functools import partial
 import pdb
 
@@ -402,9 +404,23 @@ class MqttConnection():
 		# Key: Message Id
 		# Value: Delivery(Include topic, qos, payload)
 		self.unreleased_deliveries = {}
-		self.outgoing_messages = Queue()
+		# Message format
+		# {
+		# 	'b': 'Binary packet',
+		# 	'qos': 'QoS level',
+		# 	'message_type': 'Message Type',
+		# 	'retry_time': 'Deliver retry time(default is 0)',
+		# 	'deadline': 'Deadline(default is None)',
+		# 	'is_complete': False
+		# }
+		self.outgoing_messages = Queue() # or PriorityQueue
+		# (deadline, message)
+		# message = self.retry_messages.get_nopop('your key')
+		# message['is_complete'] = True
+		self.retry_messages = PriorityQueue2()
 
 		self.retry_time = 60 # seconds
+		self.retry_step = 5 # seconds
 
 		self.state = 'INITIALIZE'
 		self.set_close_callback(self.__close_callback)
@@ -422,20 +438,49 @@ class MqttConnection():
 		self.wait_message()
 		# Async emit loop
 		IOLoop.current().spawn_callback(self.emit_loop)
+		IOLoop.current().spawn_callback(self.retry_loop)
+
+	@gen.coroutine
+	def retry_loop(self):
+		while True:
+			(deadline, message) = yield self.retry_messages.get()
+			retry_time = message.get('retry_time', 0)
+			deadline = deadline + self.retry_time + retry_time * self.retry_step
+			# Wait deadline
+			yield gen.Task(IOLoop.current().call_at, deadline)# TODO TEST
+			# TODO
+			message['retry_time'] = retry_time + 1
 
 	@gen.coroutine
 	def emit_loop(self):
 		while True:
-			pack = yield self.outgoing_messages.get()
+			message = yield self.outgoing_messages.get()
+			pack = message.get('b', None)
+			if pack is None:
+				self.outgoing_messages.task_done()
+				continue
+			pack = str(pack)
 			try:
 				yield self.stream.write(pack) # TODO complex struct and deliver retry
 			finally:
+				qos = message.get('qos', None)
+				message_type = message.get('message_type', None)
+				if qos is not None and message_type is not None:
+					if (qos > 0 or 
+						message_type == PUBLISH or
+						message_type == PUBREL or
+						message_type == SUBSCRIBE or
+						message_type == UNSUBSCRIBE):
+						deadline = time.time()
+						message['deadline'] = deadline
+						self.retry_messages.put((deadline, message))# TODO add key
 				self.outgoing_messages.task_done()
 
-	def write(self, pack):
+	@gen.coroutine
+	def write(self, message):
 		""" no wait write
 		"""
-		self.outgoing_messages.put_nowait(pack)
+		yield self.outgoing_messages.put(message)
 
 
 
