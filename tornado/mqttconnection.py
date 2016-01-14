@@ -409,14 +409,16 @@ class MqttConnection():
 		# 	'b': 'Binary packet',
 		# 	'qos': 'QoS level',
 		# 	'message_type': 'Message Type',
+		# 	'message_id': 'Message Id(Optional)',
 		# 	'retry_time': 'Deliver retry time(default is 0)',
 		# 	'deadline': 'Deadline(default is None)',
 		# 	'is_complete': False
 		# }
 		self.outgoing_messages = Queue() # or PriorityQueue
 		# (deadline, message)
-		# message = self.retry_messages.get_nopop('your key')
+		# message = self.retry_messages.pick('your key')
 		# message['is_complete'] = True
+		# Key format: Message Type + Message Id
 		self.retry_messages = PriorityQueue2()
 
 		self.retry_time = 60 # seconds
@@ -443,13 +445,18 @@ class MqttConnection():
 	@gen.coroutine
 	def retry_loop(self):
 		while True:
-			(deadline, message) = yield self.retry_messages.get()
-			retry_time = message.get('retry_time', 0)
-			deadline = deadline + self.retry_time + retry_time * self.retry_step
+			(deadline, (key, message)) = yield self.retry_messages.get()
+			if message.get('is_complete', False):
+				continue
 			# Wait deadline
 			yield gen.Task(IOLoop.current().call_at, deadline)# TODO TEST
-			# TODO
+			# Deliver retry
+			retry_time = message.get('retry_time', 0)
 			message['retry_time'] = retry_time + 1
+			b = message.get('b', None)
+			if b is not None:
+				b[0] = b[0] | 0x8 # DUP flag set 1
+			yield self.write(message) # send again
 
 	@gen.coroutine
 	def emit_loop(self):
@@ -472,8 +479,13 @@ class MqttConnection():
 						message_type == SUBSCRIBE or
 						message_type == UNSUBSCRIBE):
 						deadline = time.time()
+						retry_time = message.get('retry_time', 0)
+						deadline += self.retry_time + retry_time * self.retry_step
 						message['deadline'] = deadline
-						self.retry_messages.put((deadline, message))# TODO add key
+						message_id = message.get('message_id', None)
+						if message_id is not None:
+							key = '%03d%s' % (message_type, message_id)
+							self.retry_messages.put((deadline, (key, message)))
 				self.outgoing_messages.task_done()
 
 	@gen.coroutine

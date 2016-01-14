@@ -333,17 +333,17 @@ class PriorityQueue2(Queue):
 
 	def _put(self, item):
 		heapq.heappush(self._queue, item)
-		key = item[0]
-		value = item[1]
+		key = item[1][0]
+		value = item[1][1]
 		if key is not None:
 			self._dict[key] = value
 
-	def get_nopop(self, key):
+	def pick(self, key):
 		return self._dict.get(key, None)
 
 	def _get(self):
 		item = heapq.heappop(self._queue)
-		key = item[0]
+		key = item[1][0]
 		self._dict.pop(key, None)
 		return item
 
