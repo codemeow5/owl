@@ -70,7 +70,7 @@ class MqttServer(TCPServer):
 				message_id = self.fetch_message_id()
 				if qos_ < qos:
 					qos = qos_
-				yield connection.send_publish(0, qos, 0, topic, message_id, payload) # TODO
+				yield connection.send_publish(qos, 0, topic, message_id, payload) # TODO
 
 	def wildcards(topic):
 		"""Calculate topic wildcards

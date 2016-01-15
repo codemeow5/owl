@@ -11,6 +11,9 @@ import pdb
 
 # Constant
 WAIT_TIME = 60
+RETRY_TIMEOUT = 60 # seconds
+RETRY_INTERVAL = 5 # seconds
+RETRY_LIMIT = 20
 
 # Message types
 CONNECT = 0x10
@@ -102,10 +105,11 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_pingresp(self):
-		packet = bytearray()
-		packet.extend(struct.pack('!2B', PINGRESP, 0))
-		packet = str(packet)
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2B', PINGRESP, 0))
+		message['message_type'] = PINGRESP
+		yield self.write(message)
 
 	@gen.coroutine
 	def __handle_subscribe(self, pack):
@@ -210,39 +214,47 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_pubrec(self, message_id):
-		pdb.set_trace()
-		packet = bytearray()
-		packet.extend(struct.pack('!2B', PUBREC, 2))
-		packet.extend(struct.pack('!H', message_id))
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2B', PUBREC, 2))
+		b.extend(struct.pack('!H', message_id))
+		message['message_type'] = PUBREC
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubrel(self, message_id):
-		pdb.set_trace()
-		packet = bytearray()
-		packet.extend(struct.pack('!2B', PUBREL, 2))
-		packet.extend(struct.pack('!H', message_id))
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2B', PUBREL | QoS1, 2))
+		b.extend(struct.pack('!H', message_id))
+		message['qos'] = QoS1
+		message['message_type'] = PUBREL
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __send_puback(self, message_id):
-		pdb.set_trace()
-		packet = bytearray()
-		packet.extend(struct.pack('!2B', PUBACK, 2))
-		packet.extend(struct.pack('!H', message_id))
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2B', PUBACK, 2))
+		b.extend(struct.pack('!H', message_id))
+		message['message_type'] = PUBACK
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubcomp(self, message_id):
-		pdb.set_trace()
-		packet = bytearray()
-		packet.extend(struct.pack('!2B', PUBCOMP, 2))
-		packet.extend(struct.pack('!H', message_id))
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2B', PUBCOMP, 2))
+		b.extend(struct.pack('!H', message_id))
+		message['message_type'] = PUBCOMP
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
-	def send_publish(self, dup, qos, retain, topic, message_id, payload):
-		pdb.set_trace()
+	def send_publish(self, qos, retain, topic, message_id, payload):
 		payload_ = bytearray()
 		payload_.extend(struct.pack('!%ss' % len(payload), payload))
 		topic_ = bytearray()
@@ -251,15 +263,19 @@ class MqttConnection():
 		topic_.extend(bare_topic_)
 		variable_header_length = len(topic_) + 2
 		remaining_buffer_length = variable_header_length + len(payload_)
-		packet = bytearray()
-		byte1 = PUBLISH | dup | qos | retain
-		packet.extend(struct.pack('!B', byte1))
+		message = {}
+		b = message['b'] = bytearray()
+		byte1 = PUBLISH | qos | retain
+		b.extend(struct.pack('!B', byte1))
 		remaining_buffer_length_ = self.__write_remaining_length(remaining_buffer_length)
-		packet.extend(remaining_buffer_length_)
-		packet.extend(topic_)
-		packet.extend(struct.pack('!H', message_id))
-		packet.extend(payload_)
-		yield self.stream.write(packet)
+		b.extend(remaining_buffer_length_)
+		b.extend(topic_)
+		b.extend(struct.pack('!H', message_id))
+		b.extend(payload_)
+		message['qos'] = qos
+		message['message_type'] = PUBLISH
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def deliver(self, delivery):
@@ -277,27 +293,28 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_unsuback(self, message_id):
-		pdb.set_trace()
-		packet = bytearray()
-		packet.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
-		packet = str(packet)
-		yield self.stream.write(packet)
-		pdb.set_trace()
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
+		message['message_type'] = UNSUBACK
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __send_suback(self, message_id, qoss):
-		pdb.set_trace()
 		payload = bytearray()
 		for qos in qoss:
 			payload.extend(struct.pack('!B', qos))
 		remaining_length = 2 + len(payload)
-		packet = bytearray()
-		packet.extend(struct.pack('!B', SUBACK))
-		packet.extend(self.__write_remaining_length(remaining_length))
-		packet.extend(struct.pack('!H', message_id))
-		packet.extend(payload)
-		packet = str(packet)
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!B', SUBACK))
+		b.extend(self.__write_remaining_length(remaining_length))
+		b.extend(struct.pack('!H', message_id))
+		b.extend(payload)
+		message['message_type'] = SUBACK
+		message['message_id'] = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
@@ -343,10 +360,11 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_connack(self, code):
-		packet = bytearray()
-		packet.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
-		packet = str(packet)
-		yield self.stream.write(packet)
+		message = {}
+		b = message['b'] = bytearray()
+		b.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
+		message['message_type'] = CONNACK
+		yield self.write(message)
 
 	def close(self):
 		self.state = 'CLOSING'
@@ -400,29 +418,15 @@ class MqttConnection():
 		self.server = server
 		self.stream = stream
 		self.address = address
+
+		self.loop = IOLoop.current()
+
 		# Unreleased Deliveries 
 		# Key: Message Id
 		# Value: Delivery(Include topic, qos, payload)
 		self.unreleased_deliveries = {}
-		# Message format
-		# {
-		# 	'b': 'Binary packet',
-		# 	'qos': 'QoS level',
-		# 	'message_type': 'Message Type',
-		# 	'message_id': 'Message Id(Optional)',
-		# 	'retry_time': 'Deliver retry time(default is 0)',
-		# 	'deadline': 'Deadline(default is None)',
-		# 	'is_complete': False
-		# }
-		self.outgoing_messages = Queue() # or PriorityQueue
-		# (deadline, message)
-		# message = self.retry_messages.pick('your key')
-		# message['is_complete'] = True
-		# Key format: Message Type + Message Id
-		self.retry_messages = PriorityQueue2()
 
-		self.retry_time = 60 # seconds
-		self.retry_step = 5 # seconds
+		self.retry_callbacks = {}
 
 		self.state = 'INITIALIZE'
 		self.set_close_callback(self.__close_callback)
@@ -435,64 +439,59 @@ class MqttConnection():
 		def callback():
 			if self.state == 'INITIALIZE':
 				self.close()
-		IOLoop.current().call_later(WAIT_TIME, callback)
+		self.loop.call_later(WAIT_TIME, callback)
 		# TODO Keep Alive timer not implemented
 		self.wait_message()
-		# Async emit loop
-		IOLoop.current().spawn_callback(self.emit_loop)
-		IOLoop.current().spawn_callback(self.retry_loop)
 
 	@gen.coroutine
-	def retry_loop(self):
-		while True:
-			(deadline, (key, message)) = yield self.retry_messages.get()
-			if message.get('is_complete', False):
-				continue
-			# Wait deadline
-			yield gen.Task(IOLoop.current().call_at, deadline)# TODO TEST
-			# Deliver retry
-			retry_time = message.get('retry_time', 0)
-			message['retry_time'] = retry_time + 1
-			b = message.get('b', None)
-			if b is not None:
-				b[0] = b[0] | 0x8 # DUP flag set 1
-			yield self.write(message) # send again
-
-	@gen.coroutine
-	def emit_loop(self):
-		while True:
-			message = yield self.outgoing_messages.get()
-			pack = message.get('b', None)
-			if pack is None:
-				self.outgoing_messages.task_done()
-				continue
-			pack = str(pack)
-			try:
-				yield self.stream.write(pack) # TODO complex struct and deliver retry
-			finally:
-				qos = message.get('qos', None)
-				message_type = message.get('message_type', None)
-				if qos is not None and message_type is not None:
-					if (qos > 0 or 
-						message_type == PUBLISH or
-						message_type == PUBREL or
-						message_type == SUBSCRIBE or
-						message_type == UNSUBSCRIBE):
-						deadline = time.time()
-						retry_time = message.get('retry_time', 0)
-						deadline += self.retry_time + retry_time * self.retry_step
-						message['deadline'] = deadline
-						message_id = message.get('message_id', None)
-						if message_id is not None:
-							key = '%03d%s' % (message_type, message_id)
-							self.retry_messages.put((deadline, (key, message)))
-				self.outgoing_messages.task_done()
+	def __retry(self, message):
+		message_id = message.get('message_id', None)
+		if message_id is None:
+			return gen.Return(None)
+		pack = message.get('b', None)
+		if pack is None:
+			del self.retry_callbacks[message_id]
+			return gen.Return(None)
+		pack[0] = pack[0] | 0x8 # DUP flag set 1
+		pack = str(pack)
+		try:
+			yield self.stream.write(pack)
+		finally:
+			retry = message.get('retry', 0) + 1
+			if retry > RETRY_LIMIT:
+				del self.retry_callbacks[message_id]
+				return gen.Return(None)
+			message['retry'] = retry
+			delay = RETRY_TIMEOUT + retry * RETRY_INTERVAL
+			handle = self.loop.call_later(delay, self.__retry, message)
+			self.retry_callbacks[message_id] = handle
 
 	@gen.coroutine
 	def write(self, message):
-		""" no wait write
+		"""Message format
+		{
+			'b': 'Binary packet',
+			'qos': 'QoS level(Optional)',
+			'message_type': 'Message Type',
+			'message_id': 'Message Id(Optional)',
+			'retry': 'Deliver retry time(default is 0)'
+		}
 		"""
-		yield self.outgoing_messages.put(message)
+		pack = message.get('b', None)
+		if pack is None:
+			return gen.Return(None)
+		pack = str(pack)
+		try:
+			yield self.stream.write(pack)
+		finally:
+			qos = message.get('qos', 0)
+			if qos == 0:
+				return gen.Return(None)
+			message_id = message.get('message_id', None)
+			if message_id is None:
+				return gen.Return(None)
+			handle = self.loop.call_later(RETRY_TIMEOUT, self.__retry, message)
+			self.retry_callbacks[message_id] = handle
 
 
 
