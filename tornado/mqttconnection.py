@@ -349,7 +349,8 @@ class MqttConnection():
 		self.will_topic = will_topic
 		self.will_message = will_message
 		self.keep_alive = keep_alive
-		self.keep_alive_callback()
+		if self.keep_alive > 0:
+			self.keep_alive_callback()
 		self.server.register(self)
 
 	def keep_alive_callback(self):
@@ -424,11 +425,11 @@ class MqttConnection():
 					})
 
 	def __init__(self, server, stream, address):
-		self.loop = IOLoop.current()
-		self.last_alive = self.loop.time()
+
 		self.server = server
 		self.stream = stream
 		self.address = address
+		self.loop = IOLoop.current()
 
 		# Unreleased Deliveries 
 		# Key: Message Id
