@@ -10,10 +10,10 @@ from functools import partial
 import pdb
 
 # Constant
-WAIT_TIME = 60
 RETRY_TIMEOUT = 60 # seconds
 RETRY_INTERVAL = 5 # seconds
 RETRY_LIMIT = 20
+WAIT_CONNECT_TIMEOUT = 60 # seconds
 
 # Message types
 CONNECT = 0x10
@@ -47,37 +47,28 @@ class MqttConnection():
 		yield self.__read_remaining_length(pack)
 
 	def __handle_pack(self, pack):
+		self.last_alive = self.loop.time()
 		message_type = pack['message_type'] = pack.get('cmd') & 0xF0
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
-			return
-		if message_type == PUBLISH:
+		else if message_type == PUBLISH:
 			self.__handle_publish(pack)
-			return
-		if message_type == PUBACK:
+		else if message_type == PUBACK:
 			self.__handle_puback(pack)
-			return
-		if message_type == PUBREC:
+		else if message_type == PUBREC:
 			self.__handle_pubrec(pack)
-			return
-		if message_type == PUBREL:
+		else if message_type == PUBREL:
 			self.__handle_pubrel(pack)
-			return
-		if message_type == PUBCOMP:
+		else if message_type == PUBCOMP:
 			self.__handle_pubcomp(pack)
-			return
-		if message_type == SUBSCRIBE:
+		else if message_type == SUBSCRIBE:
 			self.__handle_subscribe(pack)
-			return
-		if message_type == UNSUBSCRIBE:
+		else if message_type == UNSUBSCRIBE:
 			self.__handle_unsubscribe(pack)
-			return
-		if message_type == PINGREQ:
+		else if message_type == PINGREQ:
 			self.__handle_pingreq(pack)
-			return
-		if message_type == DISCONNECT:
+		else if message_type == DISCONNECT:
 			self.__handle_disconnect(pack)
-			return
 
 	def __read_next_string_length(self, buff, offset):
 		if len(buff) <= offset:
@@ -348,6 +339,7 @@ class MqttConnection():
 			if connect_flags & 0x40 == 0x40:
 			# If the Password flag is set to 1
 				(password, offset) = self.__read_next_string(payload, offset)
+		keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		self.client_id = client_id
@@ -356,7 +348,17 @@ class MqttConnection():
 		self.will_retain = will_retain
 		self.will_topic = will_topic
 		self.will_message = will_message
+		self.keep_alive = keep_alive
+		self.keep_alive_callback()
 		self.server.register(self)
+
+	def keep_alive_callback(self):
+		now = self.loop.time()
+		deadline = self.last_alive + self.keep_alive * 1.5
+		if now < deadline:
+			self.close()
+		else:
+			self.keep_alive_handle = self.loop.call_at(deadline, self.keep_alive_callback)
 
 	@gen.coroutine
 	def __send_connack(self, code):
@@ -365,6 +367,12 @@ class MqttConnection():
 		b.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
 		message['message_type'] = CONNACK
 		yield self.write(message)
+
+	def closing(self):
+		if hasattr(self, 'wait_connect_handle'):
+			self.loop.remove_timeout(self.wait_connect_handle)
+		if hasattr(self, 'keep_alive_handle'):
+			self.loop.remove_timeout(self.keep_alive_handle)
 
 	def close(self):
 		self.state = 'CLOSING'
@@ -404,6 +412,7 @@ class MqttConnection():
 		return packet
 
 	def __close_callback(self):
+		self.closing()
 		self.state = 'CLOSED'
 		if self.stream.error is not None:
 			if self.will_flag:
@@ -415,11 +424,11 @@ class MqttConnection():
 					})
 
 	def __init__(self, server, stream, address):
+		self.loop = IOLoop.current()
+		self.last_alive = self.loop.time()
 		self.server = server
 		self.stream = stream
 		self.address = address
-
-		self.loop = IOLoop.current()
 
 		# Unreleased Deliveries 
 		# Key: Message Id
@@ -435,11 +444,17 @@ class MqttConnection():
 	def wait_message(self):
 		self.stream.read_bytes(1, self.__read_fix_header_byte_1)
 
+
 	def wait(self):
 		def callback():
+			# If the server does not receive a CONNECT message
+			# within a reasonable amount of time after the
+			# TCP/IP connection is established, the server should
+			# close the connection.
 			if self.state == 'INITIALIZE':
 				self.close()
-		self.loop.call_later(WAIT_TIME, callback)
+		self.wait_connect_handle = self.loop.call_later(
+			WAIT_CONNECT_TIMEOUT, callback)
 		# TODO Keep Alive timer not implemented
 		self.wait_message()
 
