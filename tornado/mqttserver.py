@@ -15,9 +15,18 @@ class MqttServer(TCPServer):
 		self.__MESSAGE_ID__ = 0
 		# The structure of self.__SUBSCRIBES__ is shown below 
 		# { 
-		#	topic: { 
-		#		client_id: (MqttConnection, qos) 
-		#	} 
+		# 	topic: {
+		# 		clients: {
+		# 			client_id: {
+		# 				connection: MqttConnection, 
+		# 				qos: QoS Level
+		# 			}
+		# 		}, 
+		# 		retain_message: {
+		# 			qos: QoS Level,
+		# 			payload: Payload
+		# 		}
+		# 	} 
 		# }
 		# Value of client_id is None or state of MqttConnection is
 		# CLOSED meant that the client not logged in
@@ -25,18 +34,37 @@ class MqttServer(TCPServer):
 	def register(self, connection):
 		self.__CONNECTIONS__[connection.client_id] = connection
 
+	def unregister(self, connection):
+		del self.__CONNECTIONS__[connection.client_id]
+
+	def clean_session(self, connection):
+		self.unregister(connection)
+		for topic in connection.subscribes:
+			topic_context = self.__SUBSCRIBES__.get(topic, None)
+			if topic_context is None:
+				continue
+			clients = topic_context.get('clients', None)
+			if clients is None:
+				continue
+			del clients[connection.client_id]
+
 	def subscribe(self, connection, topic, qos):
 		# TODO handle qos
 		client_id = connection.client_id
-		subscribers = None
-		if not topic in self.__SUBSCRIBES__:
-			subscribers = {}
-			self.__SUBSCRIBES__[topic] = subscribers # TODO match topics
-		else:
-			subscribers = self.__SUBSCRIBES__.get(topic)
-		subscribers[client_id] = (connection, qos)
-		# TODO persistence
-		return qos # possible downgrade
+		topic_context = self.__SUBSCRIBES__.get(topic, None)
+		if topic_context is None:
+			topic_context = self.__SUBSCRIBES__[topic] = {}
+		clients = topic_context.get('clients', None)
+		if clients is None:
+			clients = topic_context['clients'] = {}
+		clients[client_id] = {
+			'connection': connection,
+			'qos': qos
+			}
+		retain_message = topic_context.get('retain_message', None)
+		# TODO Persistence
+		# QoS level possible downgrade
+		return (topic, qos, retain_message)
 
 	def unsubscribe(self, connection, topic):
 		client_id = connection.client_id
@@ -57,20 +85,31 @@ class MqttServer(TCPServer):
 		qos = delivery.get('qos', None)
 		if qos is None:
 			gen.Return(None)
+		retain = delivery.get('retain', 0)
 		payload = delivery.get('payload', None)
 		# TODO calculate topic wildcards
 		topics = self.wildcards(topic)
+		if retain:
+			topic_context = self.__SUBSCRIBES__.get(topic, None)
+			if topic_context is None:
+				topic_context = self.__SUBSCRIBES__[topic] = {}
+				topic_context['retain_message'] = delivery
 		for topic_ in topics:
-			subscribers = self.__SUBSCRIBES__.get(topic_, None)
-			if subscribers is None:
+			topic_context = self.__SUBSCRIBES__.get(topic_, None)
+			if topic_context is None:
 				continue
-			for (client_id, (connection, qos_)) in subscribers.items():
+			clients = topic_context.get('clients', None)
+			if clients is None:
+				continue
+			for (client_id, client_info) in clients.items():
+				connection = client_info.get('connection', None)
+				qos_ = client_info.get('qos', 0)
 				if connection is None or connection.state <> 'CONNECTED':
 					continue
 				message_id = self.fetch_message_id()
 				if qos_ < qos:
 					qos = qos_
-				yield connection.send_publish(qos, 0, topic, message_id, payload) # TODO
+				yield connection.send_publish(qos, topic, message_id, payload, 0x0) # TODO
 
 	def wildcards(topic):
 		"""Calculate topic wildcards
