@@ -4,8 +4,6 @@ import struct
 import time
 from tornado import gen
 from tornado.ioloop import IOLoop
-from tornado.queues import Queue
-from tornado.queues import PriorityQueue2
 from functools import partial
 import pdb
 
