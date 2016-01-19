@@ -174,8 +174,9 @@ class MqttConnection():
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, remaining_buffer)
 		topic = pack['topic'] = remaining_buffer_tuple[1]
 		message_id = None
-		if qos == QoS0:
+		if qos <> QoS0:
 			message_id = pack['message_id'] = remaining_buffer_tuple[2]
+			message_id = int(message_id)
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		retain = pack['retain'] = pack.get('cmd') & 0x1
 		# TODO reply
@@ -226,6 +227,7 @@ class MqttConnection():
 			raise gen.Return(None)
 		remaining_buffer = pack.get('remaining_buffer')
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
+		message_id = int(message_id)
 		pack = self.unreleased_deliveries.get(message_id, None)
 		delivery = self.unreleased_deliveries.pop(message_id, None)
 		self.deliver(delivery)

@@ -67,12 +67,14 @@ class MqttServer(TCPServer):
 		return (topic, qos, retain_message)
 
 	def unsubscribe(self, connection, topic):
-		client_id = connection.client_id
-		if topic in self.__SUBSCRIBES__:
-			subscribers = self.__SUBSCRIBES__.get(topic)
-			subscribers.pop(client_id, None)
-			if len(subscribers) == 0:
-				self.__SUBSCRIBES__.pop(topic, None)
+		if not topic in self.__SUBSCRIBES__:
+			return
+		topic_context = self.__SUBSCRIBES__.get(topic, None)
+		if topic_context is None:
+			return
+		clients = topic_context.get('clients', None)
+		if clients is not None:
+			clients.pop(connection.client_id, None)
 		# TODO persistence
 
 	@gen.coroutine
