@@ -344,9 +344,8 @@ class MqttConnection():
 		b.extend(payload)
 		message['message_type'] = SUBACK
 		message['message_id'] = message_id
-		self.write(message, partial(self.__suback_callback, qoss))
-
-	def __suback_callback(self, qoss):
+		yield self.write(message)
+		pdb.set_trace()
 		for (topic, qos, retain_message) in qoss:
 			if retain_message is None:
 				continue
@@ -530,7 +529,8 @@ class MqttConnection():
 			handle = self.loop.call_later(delay, self.__retry, message)
 			self.retry_callbacks[message_id] = handle
 
-	def write(self, message, callback=None):
+	@gen.coroutine
+	def write(self, message):
 		"""Message format
 		{
 			'b': 'Binary packet',
@@ -540,13 +540,12 @@ class MqttConnection():
 			'retry': 'Deliver retry time(default is 0)'
 		}
 		"""
-		future = None
 		pack = message.get('b', None)
 		if pack is None:
 			raise gen.Return(None)
 		pack = str(pack)
 		try:
-			future = self.stream.write(pack, callback)
+			yield self.stream.write(pack)
 		finally:
 			qos = message.get('qos', 0)
 			if qos == 0:
@@ -556,7 +555,6 @@ class MqttConnection():
 				raise gen.Return(None)
 			handle = self.loop.call_later(RETRY_TIMEOUT, self.__retry, message)
 			self.retry_callbacks[message_id] = handle
-		return future
 
 
 

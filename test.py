@@ -9,6 +9,7 @@ from tornado.mqttserver import MqttServer
 
 if __name__ == '__main__':
 	server = MqttServer()
-	server.bind(8888)
-	server.start(0)
+	#server.bind(8888)
+	#server.start(0)
+	server.listen(8888)
 	tornado.ioloop.IOLoop.current().start()
