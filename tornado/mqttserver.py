@@ -95,6 +95,8 @@ class MqttServer(TCPServer):
 				topic_context = self.__SUBSCRIBES__[topic] = {}
 				topic_context['retain_message'] = delivery
 		for topic_ in topics:
+			# Debug
+			print topic_
 			topic_context = self.__SUBSCRIBES__.get(topic_, None)
 			if topic_context is None:
 				continue
@@ -106,12 +108,11 @@ class MqttServer(TCPServer):
 				qos_ = client_info.get('qos', 0)
 				if connection is None or connection.state <> 'CONNECTED':
 					continue
-				message_id = self.fetch_message_id()
 				if qos_ < qos:
 					qos = qos_
-				yield connection.send_publish(qos, topic, message_id, payload, 0x0) # TODO
+				yield connection.send_publish(qos, topic, payload, 0x0) # TODO
 
-	def wildcards(topic):
+	def wildcards(self, topic):
 		"""Calculate topic wildcards
 		"""
 		sections = topic.split('/')
@@ -146,12 +147,12 @@ class MqttServer(TCPServer):
 		return topics
 
 	def handle_stream(self, stream, address):
-		pdb.set_trace()
 		connection = MqttConnection(self, stream, address)
 		connection.wait()
 
 	def fetch_message_id(self):
 		self.__MESSAGE_ID__ = self.__MESSAGE_ID__ + 1
+		return self.__MESSAGE_ID__
 
 
 

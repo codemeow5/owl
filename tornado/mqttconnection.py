@@ -49,23 +49,23 @@ class MqttConnection():
 		message_type = pack['message_type'] = pack.get('cmd') & 0xF0
 		if message_type == CONNECT:
 			self.__handle_connect(pack)
-		else if message_type == PUBLISH:
+		elif message_type == PUBLISH:
 			self.__handle_publish(pack)
-		else if message_type == PUBACK:
+		elif message_type == PUBACK:
 			self.__handle_puback(pack)
-		else if message_type == PUBREC:
+		elif message_type == PUBREC:
 			self.__handle_pubrec(pack)
-		else if message_type == PUBREL:
+		elif message_type == PUBREL:
 			self.__handle_pubrel(pack)
-		else if message_type == PUBCOMP:
+		elif message_type == PUBCOMP:
 			self.__handle_pubcomp(pack)
-		else if message_type == SUBSCRIBE:
+		elif message_type == SUBSCRIBE:
 			self.__handle_subscribe(pack)
-		else if message_type == UNSUBSCRIBE:
+		elif message_type == UNSUBSCRIBE:
 			self.__handle_unsubscribe(pack)
-		else if message_type == PINGREQ:
+		elif message_type == PINGREQ:
 			self.__handle_pingreq(pack)
-		else if message_type == DISCONNECT:
+		elif message_type == DISCONNECT:
 			self.__handle_disconnect(pack)
 
 	def __read_next_string_length(self, buff, offset):
@@ -93,7 +93,7 @@ class MqttConnection():
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PINGREQ message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
 		yield self.__send_pingresp()
 
 	@gen.coroutine
@@ -106,7 +106,6 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_subscribe(self, pack):
-		pdb.set_trace()
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBLISH message, disconnect the client')
@@ -123,18 +122,17 @@ class MqttConnection():
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
-			qoss.append(self.subscribe(self, topic, qos))
+			qoss.append(self.subscribe(topic, qos))
 			self.subscribes[topic] = True
 		# TODO response SUBACK
 		yield self.__send_suback(message_id, qoss)
 
 	@gen.coroutine
 	def __handle_unsubscribe(self, pack):
-		pdb.set_trace()
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received UNSUBSCRIBE message, disconnect the client')
-			return
+			raise gen.Return(None)
 		payload_length = pack.get('remaining_length') - 2
 		remaining_buffer_format = '!H%ss' % payload_length
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
@@ -145,8 +143,8 @@ class MqttConnection():
 			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
-			self.unsubscribe(self, topic)
-			del self.subscribes[topic]
+			self.unsubscribe(topic)
+			self.subscribes.pop(topic, None)
 		# TODO response UNSUBACK
 		yield self.__send_unsuback(message_id)
 
@@ -155,42 +153,51 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_publish(self, pack):
-		pdb.set_trace()
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBLISH message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
+		qos = pack['qos'] = pack.get('cmd') & 0x6
 		remaining_buffer = pack.get('remaining_buffer')
 		topic_length = self.__read_next_string_length(remaining_buffer, 0)
-		payload_length = pack.get('remaining_length') - 2 - topic_length - 2
-		remaining_buffer_format = '!H%ssH%ss' % (topic_length, payload_length)
+		variable_header_length = 0
+		if qos == QoS0:
+			variable_header_length = topic_length + 2
+		else:
+			variable_header_length = topic_length + 2 + 2
+		payload_length = pack.get('remaining_length') - variable_header_length
+		remaining_buffer_format = None
+		if qos == QoS0:
+			remaining_buffer_format = '!H%ss%ss' % (topic_length, payload_length)
+		else:
+			remaining_buffer_format = '!H%ssH%ss' % (topic_length, payload_length)
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, remaining_buffer)
 		topic = pack['topic'] = remaining_buffer_tuple[1]
-		message_id = pack['message_id'] = remaining_buffer_tuple[2]
+		message_id = None
+		if qos == QoS0:
+			message_id = pack['message_id'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
-		qos = pack['qos'] = pack.get('cmd') & 0x6
 		retain = pack['retain'] = pack.get('cmd') & 0x1
 		# TODO reply
 		if qos == QoS0:
 			self.deliver(pack)
-			return gen.Return(None)
+			raise gen.Return(None)
 		if qos == QoS1:
 			self.deliver(pack)
 			yield self.__send_puback(message_id)
-			return gen.Return(None)
+			raise gen.Return(None)
 		if qos == QoS2:
 			# TODO response PUBREC
 			self.unreleased_deliveries[message_id] = pack
 			yield self.__send_pubrec(message_id)
-			return gen.Return(None)
+			raise gen.Return(None)
 
 	@gen.coroutine
 	def __handle_puback(self, pack):
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBACK message, disconnect the client')
-			return gen.Return(None)
-		pdb.set_trace()
+			raise gen.Return(None)
 		# TODO what to do?
 		pass
 
@@ -199,7 +206,7 @@ class MqttConnection():
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBREC message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
 		yield self.__send_pubrel(message_id)
 
 	@gen.coroutine
@@ -207,17 +214,16 @@ class MqttConnection():
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBCOMP message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
 		# TODO what to do?
 		pass
 
 	@gen.coroutine
 	def __handle_pubrel(self, pack):
-		pdb.set_trace()
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBREL message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
 		remaining_buffer = pack.get('remaining_buffer')
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
 		pack = self.unreleased_deliveries.get(message_id, None)
@@ -267,14 +273,18 @@ class MqttConnection():
 		yield self.write(message)
 
 	@gen.coroutine
-	def send_publish(self, qos, topic, message_id, payload, retain):
+	def send_publish(self, qos, topic, payload, retain):
 		payload_ = bytearray()
 		payload_.extend(struct.pack('!%ss' % len(payload), payload))
 		topic_ = bytearray()
 		bare_topic_ = struct.pack('!%ss' % len(topic), topic)
 		topic_.extend(struct.pack('!H', len(bare_topic_)))
 		topic_.extend(bare_topic_)
-		variable_header_length = len(topic_) + 2
+		variable_header_length = 0
+		if qos == QoS0:
+			variable_header_length = len(topic_)
+		else:
+			variable_header_length = len(topic_) + 2
 		remaining_buffer_length = variable_header_length + len(payload_)
 		message = {}
 		b = message['b'] = bytearray()
@@ -283,11 +293,12 @@ class MqttConnection():
 		remaining_buffer_length_ = self.__write_remaining_length(remaining_buffer_length)
 		b.extend(remaining_buffer_length_)
 		b.extend(topic_)
-		b.extend(struct.pack('!H', message_id))
+		if qos <> QoS0:
+			message['message_id'] = message_id = self.server.fetch_message_id()
+			b.extend(struct.pack('!H', message_id))
 		b.extend(payload_)
 		message['qos'] = qos
 		message['message_type'] = PUBLISH
-		message['message_id'] = message_id
 		yield self.write(message)
 
 	@gen.coroutine
@@ -295,7 +306,7 @@ class MqttConnection():
 		yield self.server.deliver(delivery)
 
 	def subscribe(self, topic, qos):
-		self.server.subscribe(self, topic, qos)
+		return self.server.subscribe(self, topic, qos)
 
 	def unsubscribe(self, topic):
 		self.server.unsubscribe(self, topic)
@@ -305,7 +316,7 @@ class MqttConnection():
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received DISCONNECT message, disconnect the client')
-			return gen.Return(None)
+			raise gen.Return(None)
 		self.close()
 
 	@gen.coroutine
@@ -331,20 +342,20 @@ class MqttConnection():
 		b.extend(payload)
 		message['message_type'] = SUBACK
 		message['message_id'] = message_id
-		yield self.write(message)
+		self.write(message, partial(self.__suback_callback, qoss))
+
+	def __suback_callback(self, qoss):
 		for (topic, qos, retain_message) in qoss:
 			if retain_message is None:
 				continue
 			qos_ = retain_message.get('qos', 0)
 			if qos < qos_:
 				qos_ = qos
-			message_id = self.server.fetch_message_id()
 			payload = retain_message.get('payload', None)
-			yield.self.send_publish(qos_, topic, message_id, payload, 0x1)
+			yield self.send_publish(qos_, topic, payload, 0x1)
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
-		pdb.set_trace()
 		self.state = 'CONNECTING'
 		payload_length = pack.get('remaining_length') - 12
 		remaining_buffer_format = '!H6s2BH%ss' % payload_length
@@ -354,38 +365,31 @@ class MqttConnection():
 		if protocol_version <> 0x3:
 			yield self.__send_connack(0x1)
 			self.close('Connection Refused: unacceptable protocol version')
-			gen.Return(None)
+			raise gen.Return(None)
 		(client_id, offset) = self.__read_next_string(payload, 0)
 		if len(client_id) > 23:
 			yield self.__send_connack(0x2)
 			self.close('Connection Refused: identifier rejected')
-			gen.Return(None)
+			raise gen.Return(None)
 		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
-		will_flag = connect_flags & 0x4 == 0x4
-		if will_flag:
+		self.will_flag = connect_flags & 0x4 == 0x4
+		if self.will_flag:
 		# If the Will Flag is set to 1
-			will_qos = connect_flags & 0x18 >> 3
-			will_retain = connect_flags & 0x20 >> 5
-			(will_topic, offset) = self.__read_next_string(payload, offset)
-			(will_message, offset) = self.__read_next_string(payload, offset)
+			self.will_qos = connect_flags & 0x18 >> 3
+			self.will_retain = connect_flags & 0x20 >> 5
+			(self.will_topic, offset) = self.__read_next_string(payload, offset)
+			(self.will_message, offset) = self.__read_next_string(payload, offset)
 		if connect_flags & 0x80 == 0x80:
 		# If the User name flag is set to 1
 			(username, offset) = self.__read_next_string(payload, offset)
 			if connect_flags & 0x40 == 0x40:
 			# If the Password flag is set to 1
 				(password, offset) = self.__read_next_string(payload, offset)
-		clean_session = connect_flags & 0x1 == 0x1
-		keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
+		self.clean_session = connect_flags & 0x1 == 0x1
+		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		self.client_id = client_id
-		self.will_flag = will_flag
-		self.will_qos = will_qos
-		self.will_retain = will_retain
-		self.will_topic = will_topic
-		self.will_message = will_message
-		self.clean_session = clean_session
-		self.keep_alive = keep_alive
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
 		self.server.register(self)
@@ -393,7 +397,7 @@ class MqttConnection():
 	def keep_alive_callback(self):
 		now = self.loop.time()
 		deadline = self.last_alive + self.keep_alive * 1.5
-		if now < deadline:
+		if now > deadline:
 			self.close()
 		else:
 			self.keep_alive_handle = self.loop.call_at(deadline, self.keep_alive_callback)
@@ -479,7 +483,7 @@ class MqttConnection():
 
 		self.state = 'INITIALIZE'
 		self.error = None
-		self.set_close_callback(self.__close_callback)
+		self.stream.set_close_callback(self.__close_callback)
 		self.client_id = None
 
 	def wait_message(self):
@@ -505,11 +509,11 @@ class MqttConnection():
 	def __retry(self, message):
 		message_id = message.get('message_id', None)
 		if message_id is None:
-			return gen.Return(None)
+			raise gen.Return(None)
 		pack = message.get('b', None)
 		if pack is None:
 			del self.retry_callbacks[message_id]
-			return gen.Return(None)
+			raise gen.Return(None)
 		pack[0] = pack[0] | 0x8 # DUP flag set 1
 		pack = str(pack)
 		try:
@@ -518,14 +522,13 @@ class MqttConnection():
 			retry = message.get('retry', 0) + 1
 			if retry > RETRY_LIMIT:
 				del self.retry_callbacks[message_id]
-				return gen.Return(None)
+				raise gen.Return(None)
 			message['retry'] = retry
 			delay = RETRY_TIMEOUT + retry * RETRY_INTERVAL
 			handle = self.loop.call_later(delay, self.__retry, message)
 			self.retry_callbacks[message_id] = handle
 
-	@gen.coroutine
-	def write(self, message):
+	def write(self, message, callback=None):
 		"""Message format
 		{
 			'b': 'Binary packet',
@@ -535,22 +538,23 @@ class MqttConnection():
 			'retry': 'Deliver retry time(default is 0)'
 		}
 		"""
+		future = None
 		pack = message.get('b', None)
 		if pack is None:
-			return gen.Return(None)
+			raise gen.Return(None)
 		pack = str(pack)
 		try:
-			yield self.stream.write(pack)
+			future = self.stream.write(pack, callback)
 		finally:
 			qos = message.get('qos', 0)
 			if qos == 0:
-				return gen.Return(None)
+				raise gen.Return(None)
 			message_id = message.get('message_id', None)
 			if message_id is None:
-				return gen.Return(None)
+				raise gen.Return(None)
 			handle = self.loop.call_later(RETRY_TIMEOUT, self.__retry, message)
 			self.retry_callbacks[message_id] = handle
-
+		return future
 
 
 
