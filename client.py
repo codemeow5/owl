@@ -16,7 +16,7 @@ def on_connect(client, userdata, rc):
 def on_message(client, userdata, msg):
 	print 'Recived(%s): %s' % (msg.topic, msg.payload)
 	
-client = mqtt.Client()
+client = mqtt.Client(client_id=raw_input('Your Client Id:'))
 client.on_connect = on_connect
 client.on_message = on_message
 

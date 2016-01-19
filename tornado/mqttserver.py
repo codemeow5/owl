@@ -38,7 +38,6 @@ class MqttServer(TCPServer):
 		self.__CONNECTIONS__.pop(connection.client_id, None)
 
 	def clean_session(self, connection):
-		pdb.set_trace()
 		self.unregister(connection)
 		for topic in connection.subscribes:
 			topic_context = self.__SUBSCRIBES__.get(topic, None)
@@ -63,7 +62,6 @@ class MqttServer(TCPServer):
 			'qos': qos
 			}
 		retain_message = topic_context.get('retain_message', None)
-		pdb.set_trace()
 		# TODO Persistence
 		# QoS level possible downgrade
 		return (topic, qos, retain_message)
@@ -98,7 +96,6 @@ class MqttServer(TCPServer):
 			if topic_context is None:
 				topic_context = self.__SUBSCRIBES__[topic] = {}
 			topic_context['retain_message'] = delivery
-			pdb.set_trace()
 		for topic_ in topics:
 			topic_context = self.__SUBSCRIBES__.get(topic_, None)
 			if topic_context is None:

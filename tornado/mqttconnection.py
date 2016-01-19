@@ -345,7 +345,6 @@ class MqttConnection():
 		message['message_type'] = SUBACK
 		message['message_id'] = message_id
 		yield self.write(message)
-		pdb.set_trace()
 		for (topic, qos, retain_message) in qoss:
 			if retain_message is None:
 				continue
