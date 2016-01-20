@@ -24,3 +24,70 @@ class MariaDB():
 							database=options.mysql_database,
 							unix_socket=options.unix_socket)
 
+	def import_to_memory(self, bucket):
+		if bucket is None:
+			return
+		bucket.clear()
+		query = ("SELECT topic, client_id, qos FROM mqtt_subscribes")
+		cursor = self.connector.cursor()
+		cursor.execute(query)
+		for (topic, client_id, qos) in cursor:
+			topic_context = bucket.get(topic, None)
+			if topic_context is None:
+				topic_context = bucket[topic] = {}
+			clients = topic_context.get('clients', None)
+			if clients is None:
+				clients = topic_context['clients'] = {}
+			clients[client_id] = {'connection': None,
+					'qos': qos}
+		cursor.close()
+		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
+		cursor = self.connector.cursor()
+		cursor.execute(query)
+		for (topic, payload, qos) in cursor:
+			topic_context = bucket.get(topic, None)
+			if topic_context is None:
+				continue
+			topic_context['retain_message'] = {'qos': qos,
+					'payload': payload}
+		cursor.close()
+
+	def add_subscribe(self, item):
+		if item is None:
+			return
+		topic = item.get('topic', None)
+		if topic is None:
+			return
+		client_id = item.get('client_id', None)
+		if client_id is None:
+			return
+		qos = item.get('qos', None)
+		if qos is None:
+			return
+		add_subscribe_ = ("INSERT INTO mqtt_subscribes "
+				"(topic, client_id, qos) "
+				"VALUES (%(topic)s, %(client_id)s, %(qos)s)")
+		cursor = self.connector.cursor()
+		cursor.execute(add_subscribe_, item)
+		cursor.close()
+
+	def add_retain_message(self, item):
+		if item is None:
+			return
+		topic = item.get('topic', None)
+		if topic is None:
+			return
+		payload = item.get('payload', None)
+		if payload is None:
+			return
+		qos = item.get('qos', None)
+		if qos is None:
+			return
+		add_retain_message_ = ("INSERT INTO mqtt_retain_message "
+					"(topic, payload, :q
+
+
+
+
+
+

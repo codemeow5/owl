@@ -43,6 +43,7 @@ CREATE TABLE `mqtt_retain_message` (
 
 LOCK TABLES `mqtt_retain_message` WRITE;
 /*!40000 ALTER TABLE `mqtt_retain_message` DISABLE KEYS */;
+INSERT INTO `mqtt_retain_message` VALUES ('topic1','this is payload',0),('topic2','this is payload',1),('topic3','this is payload',2),('topic4','this is payload',0),('topic5','this is payload',1);
 /*!40000 ALTER TABLE `mqtt_retain_message` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -78,4 +79,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-01-20 16:39:04
+-- Dump completed on 2016-01-20 18:41:48
