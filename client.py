@@ -6,6 +6,7 @@ import pdb
 import time
 
 def on_connect(client, userdata, rc):
+	#pdb.set_trace()
 	client.subscribe('public/a')
 	client.unsubscribe('public/a')
 	client.subscribe('public/b')

@@ -32,7 +32,13 @@ class MqttServer(TCPServer):
 		# CLOSED meant that the client not logged in
 
 	def register(self, connection):
+		if connection.client_id is None:
+			return
+		original = self.__CONNECTIONS__.get(connection.client_id, None)
+		if original is not None:
+			original.close()
 		self.__CONNECTIONS__[connection.client_id] = connection
+		return
 
 	def unregister(self, connection):
 		self.__CONNECTIONS__.pop(connection.client_id, None)

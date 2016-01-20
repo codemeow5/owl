@@ -307,6 +307,9 @@ class MqttConnection():
 	def deliver(self, delivery):
 		yield self.server.deliver(delivery)
 
+	def register(self):
+		self.server.register(self)
+
 	def subscribe(self, topic, qos):
 		return self.server.subscribe(self, topic, qos)
 
@@ -356,10 +359,15 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
+		if self.state == 'CONNECTED':
+			self.close('Process a second CONNECT Packet sent from '
+				'a Client as a protocol violation and disconnect the Client')
+			raise gen.Return(None)
 		self.state = 'CONNECTING'
 		payload_length = pack.get('remaining_length') - 12
 		remaining_buffer_format = '!H6s2BH%ss' % payload_length
-		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, pack.get('remaining_buffer'))
+		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, 
+			pack.get('remaining_buffer'))
 		protocol_version = pack['protocol_version'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		if protocol_version <> 0x3:
@@ -371,6 +379,8 @@ class MqttConnection():
 			yield self.__send_connack(0x2)
 			self.close('Connection Refused: identifier rejected')
 			raise gen.Return(None)
+		self.client_id = client_id
+		self.register()
 		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
 		self.will_flag = connect_flags & 0x4 == 0x4
 		if self.will_flag:
@@ -389,10 +399,8 @@ class MqttConnection():
 		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
-		self.client_id = client_id
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
-		self.server.register(self)
 
 	def keep_alive_callback(self):
 		now = self.loop.time()
@@ -400,7 +408,8 @@ class MqttConnection():
 		if now > deadline:
 			self.close()
 		else:
-			self.keep_alive_handle = self.loop.call_at(deadline, self.keep_alive_callback)
+			self.keep_alive_handle = self.loop.call_at(deadline, 
+				self.keep_alive_callback)
 
 	@gen.coroutine
 	def __send_connack(self, code):
@@ -512,7 +521,7 @@ class MqttConnection():
 			raise gen.Return(None)
 		pack = message.get('b', None)
 		if pack is None:
-			del self.retry_callbacks[message_id]
+			self.retry_callbacks.pop(message_id, None)
 			raise gen.Return(None)
 		pack[0] = pack[0] | 0x8 # DUP flag set 1
 		pack = str(pack)
@@ -521,7 +530,7 @@ class MqttConnection():
 		finally:
 			retry = message.get('retry', 0) + 1
 			if retry > RETRY_LIMIT:
-				del self.retry_callbacks[message_id]
+				self.retry_callbacks.pop(message_id, None)
 				raise gen.Return(None)
 			message['retry'] = retry
 			delay = RETRY_TIMEOUT + retry * RETRY_INTERVAL
