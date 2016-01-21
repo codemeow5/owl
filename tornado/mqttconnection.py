@@ -464,7 +464,7 @@ class MqttConnection():
 			self.loop.remove_timeout(self.wait_connect_handle)
 		if hasattr(self, 'keep_alive_handle'):
 			self.loop.remove_timeout(self.keep_alive_handle)
-		if hasattr(self, 'clean_session') and self.clean_session:
+		if hasattr(self, 'clean_session'):
 			self.server.clean_session(self)
 		if self.stream.error is not None or self.error is not None:
 			if hasattr(self, 'will_flag') and self.will_flag:
