@@ -49,8 +49,9 @@ def print_(topic):
 
 if __name__ == '__main__':
 	pdb.set_trace()
-	print_('apple')
-	print_('apple/orange')
-	print_('apple/orange/pear')
-	print_('apple/orange/pear/a')
-	print_('apple/orange/pear/a/b')
+	print_('/finance')
+	#print_('apple')
+	#print_('apple/orange')
+	#print_('apple/orange/pear')
+	#print_('apple/orange/pear/a')
+	#print_('apple/orange/pear/a/b')
