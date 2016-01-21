@@ -5,7 +5,7 @@ import pdb
 from tornado import gen
 from tornado.tcpserver import TCPServer
 from tornado.mqttconnection import MqttConnection
-from tornado.mysql import MariaDB
+from tornado.mariadb import MariaDB
 
 class MqttServer(TCPServer):
 
@@ -37,8 +37,8 @@ class MqttServer(TCPServer):
 		if connection.client_id is None:
 			return
 		topics = MariaDB.current().fetch_subscribes(connection.client_id)
-		connection.subscribes.extend(topics)
 		for topic in topics:
+			connection.subscribes[topic] = True
 			topic_context = self.__SUBSCRIBES__.get(topic, None)
 			if topic_context is None:
 				topic_context = self.__SUBSCRIBES__[topic] = {}

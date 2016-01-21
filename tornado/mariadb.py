@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
-import pdb
-pdb.set_trace()
+import os
 import mysql.connector as mariadb
 from tornado.options import OptionParser
 
@@ -20,12 +19,13 @@ class MariaDB():
 		options.define("mysql_password", default='secret')
 		options.define("mysql_database", default='owldb')
 		options.define("mysql_unix_socket", default='/var/run/mysqld/mysqld.sock')
-		options.parse_config_file(os.path.join(os.path.dirname(__file__),
+		#options.parse_config_file(os.path.join(os.path.dirname(__file__),
+		options.parse_config_file(os.path.join(os.getcwd(),
 		                                       "owldb.cfg"))
 		self.connector = mariadb.MySQLConnection(user=options.mysql_username,
 							password=options.mysql_password,
 							database=options.mysql_database,
-							unix_socket=options.unix_socket)
+							unix_socket=options.mysql_unix_socket)
 
 	def import_to_memory(self, bucket):
 		if bucket is None:
