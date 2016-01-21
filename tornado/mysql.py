@@ -83,9 +83,9 @@ class MariaDB():
 		qos = item.get('qos', None)
 		if qos is None:
 			return
-		add_retain_message_ = ("INSERT INTO mqtt_retain_message "
-					"(topic, payload, :q
-
+		cursor = self.connector.cursor()
+		cursor.callproc('add_retain_message', (topic, payload, qos))
+		cursor.close()
 
 
 

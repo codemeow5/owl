@@ -16,14 +16,6 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Current Database: `owldb`
---
-
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `owldb` /*!40100 DEFAULT CHARACTER SET latin1 */;
-
-USE `owldb`;
-
---
 -- Table structure for table `mqtt_retain_message`
 --
 
@@ -36,16 +28,6 @@ CREATE TABLE `mqtt_retain_message` (
   `qos` tinyint(2) unsigned NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `mqtt_retain_message`
---
-
-LOCK TABLES `mqtt_retain_message` WRITE;
-/*!40000 ALTER TABLE `mqtt_retain_message` DISABLE KEYS */;
-INSERT INTO `mqtt_retain_message` VALUES ('topic1','this is payload',0),('topic2','this is payload',1),('topic3','this is payload',2),('topic4','this is payload',0),('topic5','this is payload',1);
-/*!40000 ALTER TABLE `mqtt_retain_message` ENABLE KEYS */;
-UNLOCK TABLES;
 
 --
 -- Table structure for table `mqtt_subscribes`
@@ -62,13 +44,33 @@ CREATE TABLE `mqtt_subscribes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping data for table `mqtt_subscribes`
+-- Dumping routines for database 'owldb'
 --
-
-LOCK TABLES `mqtt_subscribes` WRITE;
-/*!40000 ALTER TABLE `mqtt_subscribes` DISABLE KEYS */;
-/*!40000 ALTER TABLE `mqtt_subscribes` ENABLE KEYS */;
-UNLOCK TABLES;
+/*!50003 DROP PROCEDURE IF EXISTS `add_retain_message` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8 */ ;
+/*!50003 SET character_set_results = utf8 */ ;
+/*!50003 SET collation_connection  = utf8_general_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`%` PROCEDURE `add_retain_message`(topic_ text, 
+payload_ text, 
+qos_ tinyint(2))
+begin 
+	if (select count(0) from mqtt_retain_message where topic=topic_) then 
+		update mqtt_retain_message set payload=payload_, qos=qos_ where topic=topic_; 
+	else 
+		insert into mqtt_retain_message (topic, payload, qos) values (topic_, payload_, qos_); 
+	end if;
+end ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -79,4 +81,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-01-20 18:41:48
+-- Dump completed on 2016-01-21  9:07:19
