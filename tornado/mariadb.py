@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import pdb
 import os
 import mysql.connector as mariadb
 from tornado.options import OptionParser
@@ -47,7 +48,8 @@ class MariaDB():
 		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
 		cursor = self.connector.cursor()
 		cursor.execute(query)
-		for (topic, payload, qos) in cursor:
+		result = cursor.fetchall()
+		for (topic, payload, qos) in result:
 			topic_context = bucket.get(topic, None)
 			if topic_context is None:
 				continue
@@ -95,13 +97,10 @@ class MariaDB():
 	def fetch_subscribes(self, client_id):
 		if client_id is None:
 			return
-		query = ("SELECT topic FROM mqtt_subscribes WHERE client_id = %s")
+		query = ("SELECT topic, qos FROM mqtt_subscribes WHERE client_id = %s")
 		cursor = self.connector.cursor()
 		cursor.execute(query, (client_id,))
-		topics = []
-		for (topic, payload, qos) in cursor:
-			topics.append(topic)
-		return topics
+		return cursor.fetchall()
 
 	def add_retain_message(self, item):
 		if item is None:
@@ -119,8 +118,6 @@ class MariaDB():
 		cursor.callproc('add_retain_message', (topic, payload, qos))
 		cursor.close()
 		return True
-
-
 
 
 

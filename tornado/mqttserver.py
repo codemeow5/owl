@@ -36,8 +36,8 @@ class MqttServer(TCPServer):
 	def register(self, connection):
 		if connection.client_id is None:
 			return
-		topics = MariaDB.current().fetch_subscribes(connection.client_id)
-		for topic in topics:
+		result = MariaDB.current().fetch_subscribes(connection.client_id)
+		for (topic, qos) in result:
 			connection.subscribes[topic] = True
 			topic_context = self.__SUBSCRIBES__.get(topic, None)
 			if topic_context is None:
@@ -45,7 +45,12 @@ class MqttServer(TCPServer):
 			clients = topic_context.get('clients', None)
 			if clients is None:
 				clients = topic_context['clients'] = {}
-			clients[connection.client_id] = connection
+			client_info = clients.get(connection.client_id, None)
+			if client_info is None:
+				client_info = clients[connection.client_id] = {}
+			client_info['connection'] = connection
+			client_info['qos'] = qos
+			
 		original = self.__CONNECTIONS__.get(connection.client_id, None)
 		if original is not None:
 			original.close()
