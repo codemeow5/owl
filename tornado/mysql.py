@@ -1,8 +1,11 @@
 #!/usr/bin/python
 
+import pdb
+pdb.set_trace()
 import mysql.connector as mariadb
-from tornado.options import OptionParser()
+from tornado.options import OptionParser
 
+# TODO Asynchronous
 class MariaDB():
 
 	@classmethod
@@ -51,6 +54,7 @@ class MariaDB():
 			topic_context['retain_message'] = {'qos': qos,
 					'payload': payload}
 		cursor.close()
+		return True
 
 	def add_subscribe(self, item):
 		if item is None:
@@ -70,6 +74,34 @@ class MariaDB():
 		cursor = self.connector.cursor()
 		cursor.execute(add_subscribe_, item)
 		cursor.close()
+		return True
+
+	def remove_subscribe(self, item):
+		if item is None:
+			return
+		topic = item.get('topic', None)
+		if topic is None:
+			return
+		client_id = item.get('client_id', None)
+		if client_id is None:
+			return
+		remove_subscribe_ = ("DELETE FROM mqtt_subscribes "
+				"WHERE topic = %s AND client_id = %s")
+		cursor = self.connector.cursor()
+		cursor.execute(remove_subscribe_, (topic, client_id))
+		cursor.close()
+		return True
+
+	def fetch_subscribes(self, client_id):
+		if client_id is None:
+			return
+		query = ("SELECT topic FROM mqtt_subscribes WHERE client_id = %s")
+		cursor = self.connector.cursor()
+		cursor.execute(query, (client_id,))
+		topics = []
+		for (topic, payload, qos) in cursor:
+			topics.append(topic)
+		return topics
 
 	def add_retain_message(self, item):
 		if item is None:
@@ -86,6 +118,7 @@ class MariaDB():
 		cursor = self.connector.cursor()
 		cursor.callproc('add_retain_message', (topic, payload, qos))
 		cursor.close()
+		return True
 
 
 

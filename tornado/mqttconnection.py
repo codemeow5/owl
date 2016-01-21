@@ -380,7 +380,6 @@ class MqttConnection():
 			self.close('Connection Refused: identifier rejected')
 			raise gen.Return(None)
 		self.client_id = client_id
-		self.register()
 		connect_flags = pack['connect_flags'] = remaining_buffer_tuple[3]
 		self.will_flag = connect_flags & 0x4 == 0x4
 		if self.will_flag:
@@ -401,6 +400,7 @@ class MqttConnection():
 		self.state = 'CONNECTED'
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
+		self.register()
 
 	def keep_alive_callback(self):
 		now = self.loop.time()

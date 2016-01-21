@@ -5,6 +5,7 @@ import pdb
 from tornado import gen
 from tornado.tcpserver import TCPServer
 from tornado.mqttconnection import MqttConnection
+from tornado.mysql import MariaDB
 
 class MqttServer(TCPServer):
 
@@ -30,10 +31,21 @@ class MqttServer(TCPServer):
 		# }
 		# Value of client_id is None or state of MqttConnection is
 		# CLOSED meant that the client not logged in
+		MariaDB.current().import_to_memory(self.__SUBSCRIBES__)
 
 	def register(self, connection):
 		if connection.client_id is None:
 			return
+		topics = MariaDB.current().fetch_subscribes(connection.client_id)
+		connection.subscribes.extend(topics)
+		for topic in topics:
+			topic_context = self.__SUBSCRIBES__.get(topic, None)
+			if topic_context is None:
+				topic_context = self.__SUBSCRIBES__[topic] = {}
+			clients = topic_context.get('clients', None)
+			if clients is None:
+				clients = topic_context['clients'] = {}
+			clients[connection.client_id] = connection
 		original = self.__CONNECTIONS__.get(connection.client_id, None)
 		if original is not None:
 			original.close()
@@ -56,14 +68,20 @@ class MqttServer(TCPServer):
 
 	def subscribe(self, connection, topic, qos):
 		# TODO handle qos
-		client_id = connection.client_id
+		if not connection.clean_session:
+			execute_result = MariaDB.current().add_subscribe({
+				'topic': topic,
+				'client_id': connection.client_id,
+				'qos': qos})
+			if not execute_result:
+				return None
 		topic_context = self.__SUBSCRIBES__.get(topic, None)
 		if topic_context is None:
 			topic_context = self.__SUBSCRIBES__[topic] = {}
 		clients = topic_context.get('clients', None)
 		if clients is None:
 			clients = topic_context['clients'] = {}
-		clients[client_id] = {
+		clients[connection.client_id] = {
 			'connection': connection,
 			'qos': qos
 			}
@@ -75,6 +93,12 @@ class MqttServer(TCPServer):
 	def unsubscribe(self, connection, topic):
 		if not topic in self.__SUBSCRIBES__:
 			return
+		if not connection.clean_session:
+			execute_result = MariaDB.current().remove_subscribe({
+				'topic': topic,
+				'client_id': connection.client_id})
+			if not execute_result:
+				return None
 		topic_context = self.__SUBSCRIBES__.get(topic, None)
 		if topic_context is None:
 			return
