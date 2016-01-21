@@ -60,6 +60,7 @@ class MqttServer(TCPServer):
 	def unregister(self, connection):
 		self.__CONNECTIONS__.pop(connection.client_id, None)
 
+	# TODO Never call
 	def clean_session(self, connection):
 		self.unregister(connection)
 		for topic in connection.subscribes:

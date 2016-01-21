@@ -44,6 +44,7 @@ class MariaDB():
 				clients = topic_context['clients'] = {}
 			clients[client_id] = {'connection': None,
 					'qos': qos}
+		self.connector.commit()
 		cursor.close()
 		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
 		cursor = self.connector.cursor()
@@ -55,6 +56,7 @@ class MariaDB():
 				continue
 			topic_context['retain_message'] = {'qos': qos,
 					'payload': payload}
+		self.connector.commit()
 		cursor.close()
 		return True
 
@@ -75,6 +77,7 @@ class MariaDB():
 				"VALUES (%(topic)s, %(client_id)s, %(qos)s)")
 		cursor = self.connector.cursor()
 		cursor.execute(add_subscribe_, item)
+		self.connector.commit()
 		cursor.close()
 		return True
 
@@ -91,6 +94,7 @@ class MariaDB():
 				"WHERE topic = %s AND client_id = %s")
 		cursor = self.connector.cursor()
 		cursor.execute(remove_subscribe_, (topic, client_id))
+		self.connector.commit()
 		cursor.close()
 		return True
 
@@ -116,6 +120,7 @@ class MariaDB():
 			return
 		cursor = self.connector.cursor()
 		cursor.callproc('add_retain_message', (topic, payload, qos))
+		self.connector.commit()
 		cursor.close()
 		return True
 
