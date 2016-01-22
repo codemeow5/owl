@@ -4,10 +4,12 @@ Tornado Web Server
 About Mqtt Server
 -----------------
 
-sudo apt-get install mariadb-server mariadb-client  
-sudo apt-get install python-dev  
-sudo apt-get install libmysqlclient-dev  
-sudo pip install mysql-python  
+.. code-block:: bash
+
+    sudo apt-get install mariadb-server mariadb-client
+    sudo apt-get install python-dev
+    sudo apt-get install libmysqlclient-dev
+    sudo pip install mysql-python
 
 `Tornado <http://www.tornadoweb.org>`_ is a Python web framework and
 asynchronous networking library, originally developed at `FriendFeed
