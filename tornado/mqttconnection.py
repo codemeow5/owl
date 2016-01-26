@@ -199,8 +199,12 @@ class MqttConnection():
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBACK message, disconnect the client')
 			raise gen.Return(None)
-		# TODO what to do?
-		pass
+		remaining_buffer = pack.get('remaining_buffer')
+		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
+		message_id = int(message_id)
+		handle = self.retry_callbacks.pop(message_id, None)
+		if handle is not None:
+			self.loop.remove_timeout(handle)
 
 	@gen.coroutine
 	def __handle_pubrec(self, pack):
@@ -208,6 +212,12 @@ class MqttConnection():
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBREC message, disconnect the client')
 			raise gen.Return(None)
+		remaining_buffer = pack.get('remaining_buffer')
+		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
+		message_id = int(message_id)
+		handle = self.retry_callbacks.pop(message_id, None)
+		if handle is not None:
+			self.loop.remove_timeout(handle)
 		yield self.__send_pubrel(message_id)
 
 	@gen.coroutine
@@ -216,8 +226,12 @@ class MqttConnection():
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBCOMP message, disconnect the client')
 			raise gen.Return(None)
-		# TODO what to do?
-		pass
+		remaining_buffer = pack.get('remaining_buffer')
+		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
+		message_id = int(message_id)
+		handle = self.retry_callbacks.pop(message_id, None)
+		if handle is not None:
+			self.loop.remove_timeout(handle)
 
 	@gen.coroutine
 	def __handle_pubrel(self, pack):
@@ -228,6 +242,9 @@ class MqttConnection():
 		remaining_buffer = pack.get('remaining_buffer')
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
 		message_id = int(message_id)
+		handle = self.retry_callbacks.pop(message_id, None)
+		if handle is not None:
+			self.loop.remove_timeout(handle)
 		pack = self.unreleased_deliveries.get(message_id, None)
 		delivery = self.unreleased_deliveries.pop(message_id, None)
 		self.deliver(delivery)
@@ -466,6 +483,10 @@ class MqttConnection():
 			self.loop.remove_timeout(self.keep_alive_handle)
 		if hasattr(self, 'clean_session'):
 			self.server.clean_session(self)
+		if hasattr(self, 'retry_callbacks'):
+			for (message_id, handle) in self.retry_callbacks.items():
+				if handle is not None:
+					self.loop.remove_timeout(handle)
 		if self.stream.error is not None or self.error is not None:
 			if hasattr(self, 'will_flag') and self.will_flag:
 				self.deliver({

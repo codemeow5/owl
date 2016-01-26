@@ -116,13 +116,13 @@ class MqttServer(TCPServer):
 	@gen.coroutine
 	def deliver(self, delivery):
 		if delivery is None:
-			gen.Return(None)
+			raise gen.Return(None)
 		topic = delivery.get('topic', None)
 		if topic is None:
-			gen.Return(None)
+			raise gen.Return(None)
 		qos = delivery.get('qos', None)
 		if qos is None:
-			gen.Return(None)
+			raise gen.Return(None)
 		retain = delivery.get('retain', 0)
 		payload = delivery.get('payload', None)
 		# TODO calculate topic wildcards
@@ -132,6 +132,9 @@ class MqttServer(TCPServer):
 			if topic_context is None:
 				topic_context = self.__SUBSCRIBES__[topic] = {}
 			topic_context['retain_message'] = delivery
+			execute_result = MariaDB.current().add_retain_message(delivery)
+			if not execute_result:
+				raise gen.Return(None)
 		for topic_ in topics:
 			topic_context = self.__SUBSCRIBES__.get(topic_, None)
 			if topic_context is None:
