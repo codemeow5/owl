@@ -36,7 +36,7 @@ Here is a simple example using Owl:
         server.listen(8888)
         tornado.ioloop.IOLoop.current().start()
 
-This is an example of a single process, will be supported in the future.
+This is an example of a single process, multi-process will be supported in the future.
 
 Documentation
 -------------
