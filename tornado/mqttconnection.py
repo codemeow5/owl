@@ -476,6 +476,8 @@ class MqttConnection():
 		return packet
 
 	def __close_callback(self):
+		# Debug
+		print '__close_callback() is called'
 		self.state = 'CLOSING'
 		if hasattr(self, 'wait_connect_handle'):
 			self.loop.remove_timeout(self.wait_connect_handle)
