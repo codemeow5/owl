@@ -294,7 +294,7 @@ class MqttConnection():
 	@gen.coroutine
 	def send_publish(self, qos, topic, payload, retain):
 		payload_ = bytearray()
-		payload_.extend(struct.pack('!%ss' % len(payload), payload))
+		payload_.extend(struct.pack('!%ss' % len(payload), str(payload)))
 		topic_ = bytearray()
 		bare_topic_ = struct.pack('!%ss' % len(topic), topic)
 		topic_.extend(struct.pack('!H', len(bare_topic_)))
