@@ -13,41 +13,30 @@ Installation
     sudo apt-get install libmysqlclient-dev
     sudo pip install mysql-python
 
-`Tornado <http://www.tornadoweb.org>`_ is a Python web framework and
-asynchronous networking library, originally developed at `FriendFeed
-<http://friendfeed.com>`_.  By using non-blocking network I/O, Tornado
-can scale to tens of thousands of open connections, making it ideal for
-`long polling <http://en.wikipedia.org/wiki/Push_technology#Long_polling>`_,
-`WebSockets <http://en.wikipedia.org/wiki/WebSocket>`_, and other
-applications that require a long-lived connection to each user.
+`Owl <https://github.com/codemeow5/owl>`_ is a MQTT broker based on `Tornado <http://www.tornadoweb.org>`_,
+a uncomplete implementation of MQTT protocol v3.1.
+Future releases of Owl will support multi process and distributed.
 
-Hello, world
+Example
 ------------
 
-Here is a simple "Hello, world" example web app for Tornado:
+Here is a simple example using Owl:
 
 .. code-block:: python
 
     import tornado.ioloop
     import tornado.web
-
-    class MainHandler(tornado.web.RequestHandler):
-        def get(self):
-            self.write("Hello, world")
-
-    def make_app():
-        return tornado.web.Application([
-            (r"/", MainHandler),
-        ])
+    from tornado.mqttserver import MqttServer
 
     if __name__ == "__main__":
-        app = make_app()
-        app.listen(8888)
+        server = MqttServer()
+        # Will be supported in the future
+        # server.bind(8888)
+        # server.start(0)
+        server.listen(8888)
         tornado.ioloop.IOLoop.current().start()
 
-This example does not use any of Tornado's asynchronous features; for
-that see this `simple chat room
-<https://github.com/tornadoweb/tornado/tree/stable/demos/chat>`_.
+This is an example of a single process, multi-process will be supported in the future.
 
 Documentation
 -------------
