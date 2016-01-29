@@ -15,25 +15,35 @@ class MariaDB():
 		return cls.__instance__
 
 	def __init__(self):
-		options = OptionParser()
-		options.define("mysql_username", default='root')
-		options.define("mysql_password", default='secret')
-		options.define("mysql_database", default='owldb')
-		options.define("mysql_unix_socket", default='/var/run/mysqld/mysqld.sock')
-		#options.parse_config_file(os.path.join(os.path.dirname(__file__),
-		options.parse_config_file(os.path.join(os.getcwd(),
+		self.options = OptionParser()
+		self.options.define("mysql_username", default='root')
+		self.options.define("mysql_password", default='secret')
+		self.options.define("mysql_database", default='owldb')
+		self.options.define("mysql_unix_socket", default='/var/run/mysqld/mysqld.sock')
+		self.options.parse_config_file(os.path.join(os.getcwd(),
 		                                       "owldb.cfg"))
-		self.connector = mariadb.MySQLConnection(user=options.mysql_username,
-							password=options.mysql_password,
-							database=options.mysql_database,
-							unix_socket=options.mysql_unix_socket)
+		self.__connector = mariadb.MySQLConnection(user=self.options.mysql_username,
+							password=self.options.mysql_password,
+							database=self.options.mysql_database,
+							unix_socket=self.options.mysql_unix_socket)
+
+	def fetch_connector(self):
+		if hasattr(self, '__connector') and self.__connector.is_connected():
+			pass
+		else:
+			self.__connector = mariadb.MySQLConnection(user=self.options.mysql_username,
+								password=self.options.mysql_password,
+								database=self.options.mysql_database,
+								unix_socket=self.options.mysql_unix_socket)
+		return self.__connector
 
 	def import_to_memory(self, bucket):
 		if bucket is None:
 			return
 		bucket.clear()
 		query = ("SELECT topic, client_id, qos FROM mqtt_subscribes")
-		cursor = self.connector.cursor()
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
 		cursor.execute(query)
 		for (topic, client_id, qos) in cursor:
 			topic_context = bucket.get(topic, None)
@@ -44,10 +54,10 @@ class MariaDB():
 				clients = topic_context['clients'] = {}
 			clients[client_id] = {'connection': None,
 					'qos': qos}
-		self.connector.commit()
+		connector.commit()
 		cursor.close()
 		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
-		cursor = self.connector.cursor()
+		cursor = connector.cursor()
 		cursor.execute(query)
 		result = cursor.fetchall()
 		for (topic, payload, qos) in result:
@@ -56,7 +66,7 @@ class MariaDB():
 				continue
 			topic_context['retain_message'] = {'qos': qos,
 					'payload': payload}
-		self.connector.commit()
+		connector.commit()
 		cursor.close()
 		return True
 
@@ -75,9 +85,10 @@ class MariaDB():
 		add_subscribe_ = ("INSERT INTO mqtt_subscribes "
 				"(topic, client_id, qos) "
 				"VALUES (%(topic)s, %(client_id)s, %(qos)s)")
-		cursor = self.connector.cursor()
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
 		cursor.execute(add_subscribe_, item)
-		self.connector.commit()
+		connector.commit()
 		cursor.close()
 		return True
 
@@ -92,9 +103,10 @@ class MariaDB():
 			return
 		remove_subscribe_ = ("DELETE FROM mqtt_subscribes "
 				"WHERE topic = %s AND client_id = %s")
-		cursor = self.connector.cursor()
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
 		cursor.execute(remove_subscribe_, (topic, client_id))
-		self.connector.commit()
+		connector.commit()
 		cursor.close()
 		return True
 
@@ -102,7 +114,8 @@ class MariaDB():
 		if client_id is None:
 			return
 		query = ("SELECT topic, qos FROM mqtt_subscribes WHERE client_id = %s")
-		cursor = self.connector.cursor()
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
 		cursor.execute(query, (client_id,))
 		return cursor.fetchall()
 
@@ -118,9 +131,10 @@ class MariaDB():
 		qos = item.get('qos', None)
 		if qos is None:
 			return
-		cursor = self.connector.cursor()
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
 		cursor.callproc('add_retain_message', (topic, payload, qos))
-		self.connector.commit()
+		connector.commit()
 		cursor.close()
 		return True
 
