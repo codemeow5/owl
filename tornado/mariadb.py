@@ -18,10 +18,10 @@ class MariaDB():
 		self.options = OptionParser()
 		self.options.define("mysql_username", default='root')
 		self.options.define("mysql_password", default='secret')
-		self.options.define("mysql_database", default='owldb')
+		self.options.define("mysql_database", default='owl')
 		self.options.define("mysql_unix_socket", default='/var/run/mysqld/mysqld.sock')
 		self.options.parse_config_file(os.path.join(os.getcwd(),
-		                                       "owldb.cfg"))
+		                                       "owl.cfg"))
 		self.__connector = mariadb.MySQLConnection(user=self.options.mysql_username,
 							password=self.options.mysql_password,
 							database=self.options.mysql_database,

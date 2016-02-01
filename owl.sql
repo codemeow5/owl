@@ -1,6 +1,6 @@
 -- MySQL dump 10.14  Distrib 5.5.46-MariaDB, for debian-linux-gnu (x86_64)
 --
--- Host: localhost    Database: owldb
+-- Host: localhost    Database: owl
 -- ------------------------------------------------------
 -- Server version	5.5.46-MariaDB-1ubuntu0.14.04.2
 
@@ -44,7 +44,7 @@ CREATE TABLE `mqtt_subscribes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping routines for database 'owldb'
+-- Dumping routines for database 'owl'
 --
 /*!50003 DROP PROCEDURE IF EXISTS `add_retain_message` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
