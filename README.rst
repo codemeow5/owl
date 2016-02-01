@@ -23,8 +23,7 @@ Here is a simple example using Owl:
 
 .. code-block:: python
 
-    import tornado.ioloop
-    import tornado.web
+    from tornado.ioloop import IOLoop
     from tornado.mqttserver import MqttServer
 
     if __name__ == "__main__":
@@ -33,7 +32,7 @@ Here is a simple example using Owl:
         # server.bind(8888)
         # server.start(0)
         server.listen(8888)
-        tornado.ioloop.IOLoop.current().start()
+        IOLoop.current().start()
 
 This is an example of a single process, multi-process will be supported in the future.
 
