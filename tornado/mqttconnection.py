@@ -324,8 +324,8 @@ class MqttConnection():
 	def deliver(self, delivery):
 		yield self.server.deliver(delivery)
 
-	def register(self):
-		self.server.register(self)
+	def login(self):
+		return self.server.login(self)
 
 	def subscribe(self, topic, qos):
 		return self.server.subscribe(self, topic, qos)
@@ -381,19 +381,33 @@ class MqttConnection():
 				'a Client as a protocol violation and disconnect the Client')
 			raise gen.Return(None)
 		self.state = 'CONNECTING'
-		payload_length = pack.get('remaining_length') - 12
-		remaining_buffer_format = '!H6s2BH%ss' % payload_length
+		remaining_buffer = pack.get('remaining_buffer')
+		(protocol_name, protocol_name_utf_length) = \
+			self.__read_next_string(remaining_buffer, 0)
+		protocol_name_length = protocol_name_utf_length - 2
+		payload_length = pack.get('remaining_length') - 6 - protocol_name_length
+		remaining_buffer_format = '!H%ss2BH%ss' % (protocol_name_length, payload_length)
 		remaining_buffer_tuple = struct.unpack(remaining_buffer_format, 
-			pack.get('remaining_buffer'))
-		protocol_version = pack['protocol_version'] = remaining_buffer_tuple[2]
+			remaining_buffer)
+		self.protocol_version = pack['protocol_version'] = remaining_buffer_tuple[2]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
-		if protocol_version <> 0x3:
+		if self.protocol_version <> 0x3 and self.protocol_version <> 0x4:
+			# 3.1.1 version require close the Network Connection without
+			# sending a CONNACK
+			#yield self.__send_connack(0x1)
+			self.close('Connection Refused: unacceptable protocol version')
+			raise gen.Return(None)
+		elif self.protocol_version == 0x3 and protocol_name <> 'MQIsdp':
 			yield self.__send_connack(0x1)
+			self.close('Connection Refused: unacceptable protocol version')
+			raise gen.Return(None)
+		elif self.protocol_version == 0x4 and protocol_name <> 'MQTT':
 			self.close('Connection Refused: unacceptable protocol version')
 			raise gen.Return(None)
 		(client_id, offset) = self.__read_next_string(payload, 0)
 		if len(client_id) > 23:
-			yield self.__send_connack(0x2)
+			if self.protocol_version == 0x3:
+				yield self.__send_connack(0x2)
 			self.close('Connection Refused: identifier rejected')
 			raise gen.Return(None)
 		self.client_id = client_id
@@ -411,13 +425,15 @@ class MqttConnection():
 			if connect_flags & 0x40 == 0x40:
 			# If the Password flag is set to 1
 				(password, offset) = self.__read_next_string(payload, offset)
-		self.clean_session = connect_flags & 0x1 == 0x1
 		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
+		self.clean_session = connect_flags & 0x1 == 0x1
+		if not self.login():
+			self.close()
+			raise gen.Return(None)
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
-		self.register()
 
 	def keep_alive_callback(self):
 		now = self.loop.time()
@@ -505,6 +521,7 @@ class MqttConnection():
 		self.stream = stream
 		self.address = address
 		self.loop = IOLoop.current()
+		self.protocol_version = 0x4
 
 		# Unreleased Deliveries 
 		# Key: Message Id

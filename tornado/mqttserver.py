@@ -33,9 +33,18 @@ class MqttServer(TCPServer):
 		# CLOSED meant that the client not logged in
 		MariaDB.current().import_to_memory(self.__SUBSCRIBES__)
 
-	def register(self, connection):
+	def login(self, connection):
 		if connection.client_id is None:
-			return
+			return False
+		original = self.__CONNECTIONS__.get(connection.client_id, None)
+		if original is not None:
+			if connection.protocol_version == 0x3:
+				original.close()
+			elif connection.protocol_version == 0x4:
+				return False
+			else:
+				return False
+		self.__CONNECTIONS__[connection.client_id] = connection
 		result = MariaDB.current().fetch_subscribes(connection.client_id)
 		for (topic, qos) in result:
 			connection.subscribes[topic] = True
@@ -50,19 +59,11 @@ class MqttServer(TCPServer):
 				client_info = clients[connection.client_id] = {}
 			client_info['connection'] = connection
 			client_info['qos'] = qos
-			
-		original = self.__CONNECTIONS__.get(connection.client_id, None)
-		if original is not None:
-			original.close()
-		self.__CONNECTIONS__[connection.client_id] = connection
-		return
-
-	def unregister(self, connection):
-		self.__CONNECTIONS__.pop(connection.client_id, None)
+		return True
 
 	# TODO Never call
 	def clean_session(self, connection):
-		self.unregister(connection)
+		self.__CONNECTIONS__.pop(connection.client_id, None)
 		for topic in connection.subscribes:
 			topic_context = self.__SUBSCRIBES__.get(topic, None)
 			if topic_context is None:
@@ -149,6 +150,7 @@ class MqttServer(TCPServer):
 					continue
 				if qos_ < qos:
 					qos = qos_
+				print 'send %s %s %s %s' % (client_id, qos, topic, payload)
 				yield connection.send_publish(qos, topic, payload, 0x0) # TODO
 
 	def wildcards(self, topic):

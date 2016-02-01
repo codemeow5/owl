@@ -12,6 +12,10 @@ Installation
     sudo apt-get install python-dev
     sudo apt-get install python-mysql.connector
 
+    # Mariadb
+    mysql> grant all privileges on *.* to root@"%" identified by ".";
+    mysql> flush privileges;
+
 `Owl <https://github.com/codemeow5/owl>`_ is a MQTT broker based on `Tornado <http://www.tornadoweb.org>`_,
 a uncomplete implementation of MQTT protocol v3.1.
 Future releases of Owl will support multi process and distributed.
