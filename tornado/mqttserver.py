@@ -57,7 +57,6 @@ class MqttServer(TCPServer):
 				'qos': qos})
 			if not execute_result:
 				return None
-		pdb.set_trace()
 		self.__SUBSCRIBES__.add_subscribe(
 			topic, connection.client_id, qos, connection)
 

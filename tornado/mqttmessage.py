@@ -4,7 +4,7 @@ import pdb
 
 class MqttMessage():
 
-	def __init__(self, topic, payload, qos=0, retain=False):
+	def __init__(self, topic, payload, qos=0, retain=0x0):
 		if topic is None or len(topic) == 0:
 			raise Exception('Topic can not be empty')
 		self.topic = topic

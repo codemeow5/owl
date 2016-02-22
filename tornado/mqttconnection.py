@@ -129,7 +129,8 @@ class MqttConnection():
 			retain_messages_ = self.get_retain_messages(topic)
 			for retain_message in retain_messages_:
 				qos = retain_message.qos if qos > retain_message.qos else qos
-				retain_messages.append(MqttMessage(topic, retain_message.payload, qos))
+				retain_messages.append(
+					MqttMessage(retain_message.topic, retain_message.payload, qos))
 		yield self.__send_suback(message_id, qoss)
 		for retain_message in retain_messages:
 			yield self.send_publish(
@@ -333,7 +334,7 @@ class MqttConnection():
 		message.buffer.extend(topic_)
 		if qos <> QoS0:
 			message.message_id = self.server.fetch_message_id()
-			b.extend(struct.pack('!H', message.message_id))
+			message.buffer.extend(struct.pack('!H', message.message_id))
 		message.buffer.extend(payload_)
 		message.qos = qos
 		message.message_type = PUBLISH

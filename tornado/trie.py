@@ -100,7 +100,7 @@ class TrieNode():
 	def flat(self, node_collection=None):
 		if node_collection is None:
 			node_collection = []
-		for children_node in self.__children__:
+		for children_node in self.__children__.values():
 			node_collection.append(children_node)
 			node_collection.extend(children_node.flat(node_collection))
 		return node_collection
@@ -159,9 +159,11 @@ class Trie():
 			if seq is None or len(seq) == 0:
 				break
 			word = seq[0]
-			node = node.get_child(word)
-			if node is None:
-				return
+			child_node = node.get_child(word)
+			if child_node is None:
+				child_node = TrieNode(word)
+				node.add_child(child_node)
+			node = child_node
 			if len(seq) == 1:
 				node.set_retain_message(topic, message)
 			seq = seq[1:]
@@ -197,7 +199,6 @@ class Trie():
 		return matches
 
 	def matches_pub(self, topic):
-		pdb.set_trace()
 		""" Return matching node"""
 		if not pub_topic_check(topic):
 			raise Exception('Invalid topic format')

@@ -110,21 +110,13 @@ class MariaDB():
 		cursor.execute(query, (client_id,))
 		return cursor.fetchall()
 
-	def add_retain_message(self, item):
-		if item is None:
-			return
-		topic = item.get('topic', None)
-		if topic is None:
-			return
-		payload = item.get('payload', None)
-		if payload is None:
-			return
-		qos = item.get('qos', None)
-		if qos is None:
+	def add_retain_message(self, message):
+		if message is None:
 			return
 		connector = self.fetch_connector()
 		cursor = connector.cursor()
-		cursor.callproc('add_retain_message', (topic, payload, qos))
+		cursor.callproc('add_retain_message', 
+			(message.topic, message.payload, message.qos))
 		connector.commit()
 		cursor.close()
 		return True
