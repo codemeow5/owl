@@ -4,6 +4,7 @@ import pdb
 import os
 import mysql.connector as mariadb
 from tornado.options import OptionParser
+from tornado.mqttmessage import MqttMessage
 
 # TODO Asynchronous
 class MariaDB():
@@ -46,14 +47,7 @@ class MariaDB():
 		cursor = connector.cursor()
 		cursor.execute(query)
 		for (topic, client_id, qos) in cursor:
-			topic_context = bucket.get(topic, None)
-			if topic_context is None:
-				topic_context = bucket[topic] = {}
-			clients = topic_context.get('clients', None)
-			if clients is None:
-				clients = topic_context['clients'] = {}
-			clients[client_id] = {'connection': None,
-					'qos': qos}
+			bucket.add_subscribe(topic, client_id, qos)
 		connector.commit()
 		cursor.close()
 		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
@@ -61,11 +55,8 @@ class MariaDB():
 		cursor.execute(query)
 		result = cursor.fetchall()
 		for (topic, payload, qos) in result:
-			topic_context = bucket.get(topic, None)
-			if topic_context is None:
-				continue
-			topic_context['retain_message'] = {'qos': qos,
-					'payload': payload}
+			message = MqttMessage(topic, payload, qos, True)
+			bucket.set_retain_message(message)
 		connector.commit()
 		cursor.close()
 		return True

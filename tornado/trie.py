@@ -44,6 +44,9 @@ class TrieNode():
 		self.__clients__ = {}
 		self.__retain_message__ = None
 
+	def get_clients(self):
+		return self.__clients__
+
 	def add_child(self, node):
 		self.__children__[node.word] = node
 		node.parent = self
@@ -54,14 +57,14 @@ class TrieNode():
 	def get_child(self, word):
 		return self.__children__.get(word, None)
 
-	def del(self):
+	def destroy(self):
 		if self.parent is not None:
 			self.parent.remove_child(self)
 
-	def add_subscribe(self, topic, connection, qos):
+	def add_subscribe(self, topic, client_id, qos, connection=None):
 		self.has_sub_info = True
 		self.topic = topic
-		self.__clients__[connection.client_id] = {
+		self.__clients__[client_id] = {
 			'connection': connection,
 			'qos': qos
 		}
@@ -72,12 +75,24 @@ class TrieNode():
 		connection = self.__clients__.pop(client_id, None)
 		if len(self.__clients__) == 0:
 			self.has_sub_info = False
-		if (not self.has_sub_info) and 
+		if ((not self.has_sub_info) and 
 			(not self.has_retain_message) and
-			(len(self.__children__) == 0):
-			self.del()
+			(len(self.__children__) == 0)):
+			self.destroy()
 		if connection is None:
 			return False
+
+	def set_retain_message(self, topic, message):
+		if message is None:
+			self.has_retain_message = False
+		else:
+			self.has_retain_message = True
+			message.retain = True
+		self.topic = topic
+		self.__retain_message__ = message
+
+	def get_retain_message(self):
+		return self.__retain_message__
 
 	def children(self):
 		return self.__children__.values()
@@ -96,7 +111,11 @@ class Trie():
 		self.__SUBSCRIBES__ = {}
 		self.__ROOTNODE__ = TrieNode(word=None)
 
-	def add_subscribe(self, topic, connection, qos):
+	def clear(self):
+		self.__SUBSCRIBES__.clear()
+		self.__ROOTNODE__ = TrieNode(word=None)
+
+	def add_subscribe(self, topic, client_id, qos, connection=None):
 		if not sub_topic_check(topic):
 			raise Exception('Invalid topic format')
 		seq = topic.split('/')
@@ -111,7 +130,7 @@ class Trie():
 				node.add_child(child_node)
 			node = child_node
 			if len(seq) == 1:
-				node.add_subscribe(topic, connection, qos)
+				node.add_subscribe(topic, client_id, qos, connection)
 			seq = seq[1:]
 
 	def remove_subscribe(self, topic, client_id):
@@ -130,8 +149,27 @@ class Trie():
 				node.remove_subscribe(topic, client_id)
 			seq = seq[1:]
 
-	def matches(self, topic):
+	def set_retain_message(self, message):
+		topic = message.topic
+		if not pub_topic_check(topic):
+			raise Exception('Invalid topic format')
+		seq = topic.split('/')
+		node = self.__ROOTNODE__
+		while True:
+			if seq is None or len(seq) == 0:
+				break
+			word = seq[0]
+			node = node.get_child(word)
+			if node is None:
+				return
+			if len(seq) == 1:
+				node.set_retain_message(topic, message)
+			seq = seq[1:]
+
+	def matches_sub(self, topic):
 		""" Return matching node"""
+		if not sub_topic_check(topic):
+			raise Exception('Invalid topic format')
 		matches = []
 		progress = []
 		seq = topic.split('/')
@@ -139,6 +177,7 @@ class Trie():
 		while True:
 			if seq is None or len(seq) == 0:
 				break
+			word = seq[0]
 			progress_ = progress
 			progress = []
 			if word == '#':
@@ -152,21 +191,40 @@ class Trie():
 					child_node = prog.get_child(word)
 					if child_node is not None:
 						progress.append(child_node)
-					child_node = prog.get_child('+')
-					if child_node is not None:
-						progress.append(child_node)
-					child_node = prog.get_child('#')
-					if child_node is not None:
-						matches.append(child_node)
 			if len(seq) == 1:
 				matches.extend(progress)
 			seq = seq[1:]
 		return matches
 
-
-
-
-
+	def matches_pub(self, topic):
+		pdb.set_trace()
+		""" Return matching node"""
+		if not pub_topic_check(topic):
+			raise Exception('Invalid topic format')
+		matches = []
+		progress = []
+		seq = topic.split('/')
+		progress.append(self.__ROOTNODE__)
+		while True:
+			if seq is None or len(seq) == 0:
+				break
+			word = seq[0]
+			progress_ = progress
+			progress = []
+			for prog in progress_:
+				child_node = prog.get_child(word)
+				if child_node is not None:
+					progress.append(child_node)
+				child_node = prog.get_child('+')
+				if child_node is not None:
+					progress.append(child_node)
+				child_node = prog.get_child('#')
+				if child_node is not None:
+					matches.append(child_node)
+			if len(seq) == 1:
+				matches.extend(progress)
+			seq = seq[1:]
+		return matches
 
 
 

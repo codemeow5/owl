@@ -5,6 +5,7 @@ import time
 from tornado import gen
 from tornado.ioloop import IOLoop
 from functools import partial
+from tornado.mqttmessage import MqttMessage, BinaryMessage
 import pdb
 
 # Constant
@@ -98,10 +99,9 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_pingresp(self):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2B', PINGRESP, 0))
-		message['message_type'] = PINGRESP
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2B', PINGRESP, 0))
+		message.message_type = PINGRESP
 		yield self.write(message)
 
 	@gen.coroutine
@@ -116,16 +116,42 @@ class MqttConnection():
 		message_id = pack['message_id'] = remaining_buffer_tuple[0]
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		qoss = []
+		retain_messages = []
 		offset = 0
 		while True:
 			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
-			qoss.append(self.subscribe(topic, qos))
+			self.subscribe(topic, qos)
 			self.subscribes[topic] = True
-		# TODO response SUBACK
+			qoss.append(qos)
+			retain_messages_ = self.get_retain_messages(topic)
+			for retain_message in retain_messages_:
+				qos = retain_message.qos if qos > retain_message.qos else qos
+				retain_messages.append(MqttMessage(topic, retain_message.payload, qos))
 		yield self.__send_suback(message_id, qoss)
+		for retain_message in retain_messages:
+			yield self.send_publish(
+				retain_message.qos, 
+				retain_message.topic, 
+				retain_message.payload,
+				0x1)
+
+	@gen.coroutine
+	def __send_suback(self, message_id, qoss):
+		payload = bytearray()
+		for qos in qoss:
+			payload.extend(struct.pack('!B', qos))
+		remaining_length = 2 + len(payload)
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!B', SUBACK))
+		message.buffer.extend(self.__write_remaining_length(remaining_length))
+		message.buffer.extend(struct.pack('!H', message_id))
+		message.buffer.extend(payload)
+		message.message_type = SUBACK
+		message.message_id = message_id
+		yield self.write(message)
 
 	@gen.coroutine
 	def __handle_unsubscribe(self, pack):
@@ -179,17 +205,16 @@ class MqttConnection():
 			message_id = int(message_id)
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		retain = pack['retain'] = pack.get('cmd') & 0x1
-		# TODO reply
+		message = MqttMessage(topic, payload, qos, retain)
 		if qos == QoS0:
-			self.deliver(pack)
+			self.publish_message(message)
 			raise gen.Return(None)
 		if qos == QoS1:
-			self.deliver(pack)
+			self.publish_message(message)
 			yield self.__send_puback(message_id)
 			raise gen.Return(None)
 		if qos == QoS2:
-			# TODO response PUBREC
-			self.unreleased_deliveries[message_id] = pack
+			self.unreleased_messages[message_id] = message
 			yield self.__send_pubrec(message_id)
 			raise gen.Return(None)
 
@@ -245,50 +270,45 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
-		pack = self.unreleased_deliveries.get(message_id, None)
-		delivery = self.unreleased_deliveries.pop(message_id, None)
-		self.deliver(delivery)
+		message = self.unreleased_messages.pop(message_id, None)
+		self.publish_message(message)
 		yield self.__send_pubcomp(message_id)
 
 	@gen.coroutine
 	def __send_pubrec(self, message_id):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2B', PUBREC, 2))
-		b.extend(struct.pack('!H', message_id))
-		message['message_type'] = PUBREC
-		message['message_id'] = message_id
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2B', PUBREC, 2))
+		message.buffer.extend(struct.pack('!H', message_id))
+		message.message_type = PUBREC
+		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubrel(self, message_id):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2B', PUBREL | QoS1, 2))
-		b.extend(struct.pack('!H', message_id))
-		message['qos'] = QoS1
-		message['message_type'] = PUBREL
-		message['message_id'] = message_id
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2B', PUBREL | QoS1, 2))
+		message.buffer.extend(struct.pack('!H', message_id))
+		message.qos = QoS1
+		message.message_type = PUBREL
+		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
 	def __send_puback(self, message_id):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2B', PUBACK, 2))
-		b.extend(struct.pack('!H', message_id))
-		message['message_type'] = PUBACK
-		message['message_id'] = message_id
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2B', PUBACK, 2))
+		message.buffer.extend(struct.pack('!H', message_id))
+		message.message_type = PUBACK
+		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubcomp(self, message_id):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2B', PUBCOMP, 2))
-		b.extend(struct.pack('!H', message_id))
-		message['message_type'] = PUBCOMP
-		message['message_id'] = message_id
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2B', PUBCOMP, 2))
+		message.buffer.extend(struct.pack('!H', message_id))
+		message.message_type = PUBCOMP
+		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
@@ -305,24 +325,23 @@ class MqttConnection():
 		else:
 			variable_header_length = len(topic_) + 2
 		remaining_buffer_length = variable_header_length + len(payload_)
-		message = {}
-		b = message['b'] = bytearray()
+		message = BinaryMessage()
 		byte1 = PUBLISH | qos | retain
-		b.extend(struct.pack('!B', byte1))
+		message.buffer.extend(struct.pack('!B', byte1))
 		remaining_buffer_length_ = self.__write_remaining_length(remaining_buffer_length)
-		b.extend(remaining_buffer_length_)
-		b.extend(topic_)
+		message.buffer.extend(remaining_buffer_length_)
+		message.buffer.extend(topic_)
 		if qos <> QoS0:
-			message['message_id'] = message_id = self.server.fetch_message_id()
-			b.extend(struct.pack('!H', message_id))
-		b.extend(payload_)
-		message['qos'] = qos
-		message['message_type'] = PUBLISH
+			message.message_id = self.server.fetch_message_id()
+			b.extend(struct.pack('!H', message.message_id))
+		message.buffer.extend(payload_)
+		message.qos = qos
+		message.message_type = PUBLISH
 		yield self.write(message)
 
 	@gen.coroutine
-	def deliver(self, delivery):
-		yield self.server.deliver(delivery)
+	def publish_message(self, message):
+		yield self.server.publish_message(message)
 
 	def login(self):
 		return self.server.login(self)
@@ -332,6 +351,9 @@ class MqttConnection():
 
 	def unsubscribe(self, topic):
 		self.server.unsubscribe(self, topic)
+
+	def get_retain_messages(self, topic):
+		return self.server.get_retain_messages(topic)
 
 	@gen.coroutine
 	def __handle_disconnect(self, pack):
@@ -343,36 +365,11 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_unsuback(self, message_id):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
-		message['message_type'] = UNSUBACK
-		message['message_id'] = message_id
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
+		message.message_type = UNSUBACK
+		message.message_id = message_id
 		yield self.write(message)
-
-	@gen.coroutine
-	def __send_suback(self, message_id, qoss):
-		payload = bytearray()
-		for (topic, qos, retain_message) in qoss:
-			payload.extend(struct.pack('!B', qos))
-		remaining_length = 2 + len(payload)
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!B', SUBACK))
-		b.extend(self.__write_remaining_length(remaining_length))
-		b.extend(struct.pack('!H', message_id))
-		b.extend(payload)
-		message['message_type'] = SUBACK
-		message['message_id'] = message_id
-		yield self.write(message)
-		for (topic, qos, retain_message) in qoss:
-			if retain_message is None:
-				continue
-			qos_ = retain_message.get('qos', 0)
-			if qos < qos_:
-				qos_ = qos
-			payload = retain_message.get('payload', None)
-			yield self.send_publish(qos_, topic, payload, 0x1)
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
@@ -446,10 +443,9 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_connack(self, code):
-		message = {}
-		b = message['b'] = bytearray()
-		b.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
-		message['message_type'] = CONNACK
+		message = BinaryMessage()
+		message.buffer.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
+		message.message_type = CONNACK
 		yield self.write(message)
 
 	def close(self, error=None):
@@ -507,12 +503,12 @@ class MqttConnection():
 					self.loop.remove_timeout(handle)
 		if self.stream.error is not None or self.error is not None:
 			if hasattr(self, 'will_flag') and self.will_flag:
-				self.deliver({
-					'topic': self.will_topic,
-					'qos': self.will_qos,
-					'payload': self.will_message,
-					'retain': self.will_retain
-					})
+				message = MqttMessage(
+					self.will_topic, 
+					self.will_message, 
+					self.will_qos, 
+					self.will_retain)
+				self.publish_message(message)
 		self.state = 'CLOSED'
 
 	def __init__(self, server, stream, address):
@@ -523,10 +519,7 @@ class MqttConnection():
 		self.loop = IOLoop.current()
 		self.protocol_version = 0x4
 
-		# Unreleased Deliveries 
-		# Key: Message Id
-		# Value: Delivery(Include topic, qos, payload)
-		self.unreleased_deliveries = {}
+		self.unreleased_messages = {}
 		self.retry_callbacks = {}
 		self.subscribes = {}
 
@@ -556,24 +549,21 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __retry(self, message):
-		message_id = message.get('message_id', None)
-		if message_id is None:
+		if message.message_id is None:
 			raise gen.Return(None)
-		pack = message.get('b', None)
-		if pack is None:
-			self.retry_callbacks.pop(message_id, None)
+		if message.buffer is None:
+			self.retry_callbacks.pop(message.message_id, None)
 			raise gen.Return(None)
-		pack[0] = pack[0] | 0x8 # DUP flag set 1
-		pack = str(pack)
+		message.buffer[0] = message.buffer[0] | 0x8 # DUP flag set 1
+		buffstr = str(message.buffer)
 		try:
-			yield self.stream.write(pack)
+			yield self.stream.write(buffstr)
 		finally:
-			retry = message.get('retry', 0) + 1
-			if retry > RETRY_LIMIT:
-				self.retry_callbacks.pop(message_id, None)
+			message.retry = message.retry + 1
+			if message.retry > RETRY_LIMIT:
+				self.retry_callbacks.pop(message.message_id, None)
 				raise gen.Return(None)
-			message['retry'] = retry
-			delay = RETRY_TIMEOUT + retry * RETRY_INTERVAL
+			delay = RETRY_TIMEOUT + message.retry * RETRY_INTERVAL
 			handle = self.loop.call_later(delay, self.__retry, message)
 			self.retry_callbacks[message_id] = handle
 
@@ -581,28 +571,23 @@ class MqttConnection():
 	def write(self, message):
 		"""Message format
 		{
-			'b': 'Binary packet',
+			'buffer': 'Binary packet',
 			'qos': 'QoS level(Optional)',
 			'message_type': 'Message Type',
 			'message_id': 'Message Id(Optional)',
 			'retry': 'Deliver retry time(default is 0)'
 		}
 		"""
-		pack = message.get('b', None)
-		if pack is None:
-			raise gen.Return(None)
-		pack = str(pack)
+		buffstr = str(message.buffer)
 		try:
-			yield self.stream.write(pack)
+			yield self.stream.write(buffstr)
 		finally:
-			qos = message.get('qos', 0)
-			if qos == 0:
+			if message.qos == 0:
 				raise gen.Return(None)
-			message_id = message.get('message_id', None)
-			if message_id is None:
+			if message.message_id is None:
 				raise gen.Return(None)
 			handle = self.loop.call_later(RETRY_TIMEOUT, self.__retry, message)
-			self.retry_callbacks[message_id] = handle
+			self.retry_callbacks[message.message_id] = handle
 
 
 
