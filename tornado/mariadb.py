@@ -1,10 +1,10 @@
 #!/usr/bin/python
 
 import pdb
-import os
+import os, binascii
 import mysql.connector as mariadb
 from tornado.options import OptionParser
-from tornado.mqttmessage import MqttMessage
+from tornado.mqttmessage import MqttMessage, BinaryMessage
 
 # TODO Asynchronous
 class MariaDB():
@@ -157,8 +157,9 @@ class MariaDB():
 			return
 		connector = self.fetch_connector()
 		cursor = connector.cursor()
+		buffstr = binascii.b2a_uu(message.buffer) # So ugly :(
 		cursor.callproc('add_outgoing_message',
-			(client_id, message.message_id, message.buffer, message.message_type, message.qos))
+			(client_id, message.message_id, buffstr, message.message_type, message.qos))
 		connector.commit()
 		cursor.close()
 
@@ -179,7 +180,8 @@ class MariaDB():
 		cursor = connector.cursor()
 		cursor.execute(query, (client_id,))
 		messages = []
-		for (message_id, buffer, message_type, qos) in cursor.fetchall():
+		for (message_id, buffstr, message_type, qos) in cursor.fetchall():
+			buffer = binascii.a2b_uu(buffstr) # So ugly :(
 			messages.append(BinaryMessage(buffer, message_type, qos, 0, message_id))
 		return messages
 

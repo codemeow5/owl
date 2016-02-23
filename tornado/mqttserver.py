@@ -91,8 +91,9 @@ class MqttServer(TCPServer):
 					qos_ = message.qos
 				if connection is None or connection.state <> 'CONNECTED':
 					# Offline message
+					message_id = self.fetch_message_id()
 					MqttConnection.save_offline_message(
-						client_id, qos_, message.topic, message.payload, 0x0)
+						client_id, message_id, qos_, message.topic, message.payload, 0x0)
 					continue
 				yield connection.send_publish(
 					qos_, message.topic, message.payload, 0x0) # TODO
@@ -102,6 +103,7 @@ class MqttServer(TCPServer):
 		connection.wait()
 
 	def fetch_message_id(self):
+		# TODO Persistence
 		self.__MESSAGE_ID__ = self.__MESSAGE_ID__ + 1
 		return self.__MESSAGE_ID__
 

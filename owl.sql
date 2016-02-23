@@ -25,7 +25,7 @@ DROP TABLE IF EXISTS `mqtt_outgoing_messages`;
 CREATE TABLE `mqtt_outgoing_messages` (
   `client_id` varchar(23) NOT NULL,
   `message_id` smallint(16) unsigned NOT NULL,
-  `buffer` blob NOT NULL,
+  `buffer` text NOT NULL,
   `message_type` tinyint(8) unsigned NOT NULL,
   `qos` tinyint(2) unsigned NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -37,6 +37,7 @@ CREATE TABLE `mqtt_outgoing_messages` (
 
 LOCK TABLES `mqtt_outgoing_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_outgoing_messages` DISABLE KEYS */;
+INSERT INTO `mqtt_outgoing_messages` VALUES ('clean retained',2,'%D ,  @  \n',144,0),('myclientid',2,'1,@\\ !E1O<&EC00 \"<6]S(#$ \n',48,2),('myclientid',3,'1,@\\ !E1O<&EC00 #<6]S(#( \n',48,2),('myclientid',4,'$< ( !   \n',112,0),('myclientid',5,'$0 ( !0  \n',64,0),('myclientid',6,'$4 ( !@  \n',80,0),('myclientid',7,'%D , !P( \n',144,0);
 /*!40000 ALTER TABLE `mqtt_outgoing_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -60,6 +61,7 @@ CREATE TABLE `mqtt_retain_messages` (
 
 LOCK TABLES `mqtt_retain_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_retain_messages` DISABLE KEYS */;
+INSERT INTO `mqtt_retain_messages` VALUES ('TopicA/B','qos 0',0),('Topic/C','qos 1',2);
 /*!40000 ALTER TABLE `mqtt_retain_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -109,6 +111,7 @@ CREATE TABLE `mqtt_unreleased_messages` (
 
 LOCK TABLES `mqtt_unreleased_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_unreleased_messages` DISABLE KEYS */;
+INSERT INTO `mqtt_unreleased_messages` VALUES ('myclientid',4,'TopicA','qos 2',4,0),('myclientid',6,'TopicA/C','qos 2',4,1);
 /*!40000 ALTER TABLE `mqtt_unreleased_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -125,7 +128,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = '' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`%` PROCEDURE `add_outgoing_message`(IN `client_id_` VARCHAR(23), IN `message_id_` SMALLINT(16) UNSIGNED, IN `buffer_` BLOB, IN `message_type_` TINYINT(8) UNSIGNED, IN `qos_` TINYINT(2) UNSIGNED)
+CREATE DEFINER=`root`@`%` PROCEDURE `add_outgoing_message`(IN `client_id_` VARCHAR(23), IN `message_id_` SMALLINT(16) UNSIGNED, IN `buffer_` TEXT, IN `message_type_` TINYINT(8) UNSIGNED, IN `qos_` TINYINT(2) UNSIGNED)
 begin 
 	if (select count(0) from mqtt_outgoing_messages where client_id=client_id_ and message_id=message_id_) then 
 		update mqtt_outgoing_messages set buffer=buffer_, message_type=message_type_, qos=qos_ where client_id=client_id_ and message_id=message_id_; 
@@ -194,4 +197,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-02-23 18:47:20
+-- Dump completed on 2016-02-23 20:12:26

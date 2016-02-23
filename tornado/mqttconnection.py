@@ -5,6 +5,7 @@ import time
 from tornado import gen
 from tornado.ioloop import IOLoop
 from functools import partial
+from tornado.mariadb import MariaDB
 from tornado.mqttmessage import MqttMessage, BinaryMessage
 import pdb
 
@@ -316,7 +317,7 @@ class MqttConnection():
 		yield self.write(message)
 
 	@classmethod
-	def build_publish_message(cls, qos, topic, payload, retain):
+	def build_publish_message(cls, message_id, qos, topic, payload, retain):
 		payload_ = bytearray()
 		payload_.extend(struct.pack('!%ss' % len(payload), str(payload)))
 		topic_ = bytearray()
@@ -332,11 +333,12 @@ class MqttConnection():
 		message = BinaryMessage()
 		byte1 = PUBLISH | qos | retain
 		message.buffer.extend(struct.pack('!B', byte1))
-		remaining_buffer_length_ = self.__write_remaining_length(remaining_buffer_length)
+		remaining_buffer_length_ = \
+			MqttConnection.__write_remaining_length(remaining_buffer_length)
 		message.buffer.extend(remaining_buffer_length_)
 		message.buffer.extend(topic_)
 		if qos <> QoS0:
-			message.message_id = self.server.fetch_message_id()
+			message.message_id = message_id
 			message.buffer.extend(struct.pack('!H', message.message_id))
 		message.buffer.extend(payload_)
 		message.qos = qos
@@ -345,12 +347,13 @@ class MqttConnection():
 
 	@gen.coroutine
 	def send_publish(self, qos, topic, payload, retain):
-		message = MqttConnection.build_publish_message(qos, topic, payload, retain)
+		message_id = self.server.fetch_message_id()
+		message = MqttConnection.build_publish_message(message_id, qos, topic, payload, retain)
 		yield self.write(message)
 
 	@classmethod
-	def save_offline_message(cls, client_id, qos, topic, payload, retain):
-		message = MqttConnection.build_publish_message(qos, topic, payload, retain)
+	def save_offline_message(cls, client_id, message_id, qos, topic, payload, retain):
+		message = MqttConnection.build_publish_message(message_id, qos, topic, payload, retain)
 		MariaDB.current().add_outgoing_message(client_id, message)
 
 	@gen.coroutine
@@ -498,8 +501,9 @@ class MqttConnection():
 				break
 		pack['remaining_length'] = value
 		yield self.__read_remaining_buffer(pack)
-	
-	def __write_remaining_length(self, length):
+
+	@classmethod	
+	def __write_remaining_length(cls, length):
 		packet = bytearray()
 		while True:
 			digit = length % 128
@@ -604,6 +608,7 @@ class MqttConnection():
 		if persistence:
 			MariaDB.current().add_outgoing_message(self.client_id, message)
 		buffstr = str(message.buffer)
+		print '(%s)%s' % (message.message_id, buffstr) #TEST
 		try:
 			yield self.stream.write(buffstr)
 		finally:
