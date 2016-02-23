@@ -35,9 +35,12 @@ class MqttServer(TCPServer):
 				topic, connection.client_id, qos, connection)
 		return True
 
-	# TODO Never call
 	def clean_session(self, connection):
 		self.__CONNECTIONS__.pop(connection.client_id, None)
+		if hasattr(connection, 'clean_session'):
+			print 'connection.clean_session is %s' % connection.clean_session
+		if hasattr(connection, 'clean_session') and not connection.clean_session:
+			return
 		for topic in connection.subscribes:
 			self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
 
@@ -84,10 +87,13 @@ class MqttServer(TCPServer):
 			for (client_id, client_info) in clients.items():
 				connection = client_info.get('connection', None)
 				qos_ = client_info.get('qos', 0)
-				if connection is None or connection.state <> 'CONNECTED':
-					continue
 				if qos_ > message.qos:
 					qos_ = message.qos
+				if connection is None or connection.state <> 'CONNECTED':
+					# Offline message
+					MqttConnection.save_offline_message(
+						client_id, qos_, message.topic, message.payload, 0x0)
+					continue
 				yield connection.send_publish(
 					qos_, message.topic, message.payload, 0x0) # TODO
 				

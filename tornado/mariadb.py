@@ -50,7 +50,7 @@ class MariaDB():
 			bucket.add_subscribe(topic, client_id, qos)
 		connector.commit()
 		cursor.close()
-		query = ("SELECT topic, payload, qos FROM mqtt_retain_message")
+		query = ("SELECT topic, payload, qos FROM mqtt_retain_messages")
 		cursor = connector.cursor()
 		cursor.execute(query)
 		result = cursor.fetchall()
@@ -120,6 +120,71 @@ class MariaDB():
 		connector.commit()
 		cursor.close()
 		return True
+
+	def add_unreleased_message(self, client_id, message_id, message):
+		if client_id is None or message_id is None or message is None:
+			return
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.callproc('add_unreleased_message',
+			(client_id, message_id, message.topic, message.payload, message.qos, message.retain))
+		connector.commit()
+		cursor.close()
+
+	def remove_unreleased_message(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		query = ("DELETE FROM mqtt_unreleased_messages WHERE client_id = %s AND message_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id, message_id))
+		cursor.close()
+
+	def fetch_unreleased_messages(self, client_id):
+		if client_id is None:
+			return
+		query = ("SELECT message_id, topic, payload, qos, retain FROM mqtt_unreleased_messages WHERE client_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id,))
+		messages = {}
+		for (message_id, topic, payload, qos, retain) in cursor.fetchall():
+			messages[message_id] = MqttMessage(topic, payload, qos, retain)
+		return messages
+
+	def add_outgoing_message(self, client_id, message):
+		if client_id is None or message is None or message.message_id is None:
+			return
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.callproc('add_outgoing_message',
+			(client_id, message.message_id, message.buffer, message.message_type, message.qos))
+		connector.commit()
+		cursor.close()
+
+	def remove_outgoing_message(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		query = ("DELETE FROM mqtt_outgoing_messages WHERE client_id = %s AND message_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id, message_id))
+		cursor.close()
+
+	def fetch_outgoing_messages(self, client_id):
+		if client_id is None:
+			return
+		query = ("SELECT message_id, buffer, message_type, qos FROM mqtt_outgoing_messages WHERE client_id = %s ORDER BY message_id")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id,))
+		messages = []
+		for (message_id, buffer, message_type, qos) in cursor.fetchall():
+			messages.append(BinaryMessage(buffer, message_type, qos, 0, message_id))
+		return messages
+
+
+
 
 
 

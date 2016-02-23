@@ -83,15 +83,18 @@ class TrieNode():
 			return False
 
 	def set_retain_message(self, topic, message):
-		if message is None:
+		if message is None or message.payload is None or len(message.payload) == 0:
 			self.has_retain_message = False
+			self.__retain_message__ = None
 		else:
 			self.has_retain_message = True
 			message.retain = True
-		self.topic = topic
-		self.__retain_message__ = message
+			self.topic = topic
+			self.__retain_message__ = message
 
 	def get_retain_message(self):
+		if not self.has_retain_message:
+			return None
 		return self.__retain_message__
 
 	def children(self):

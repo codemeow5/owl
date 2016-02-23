@@ -216,6 +216,8 @@ class MqttConnection():
 			raise gen.Return(None)
 		if qos == QoS2:
 			self.unreleased_messages[message_id] = message
+			MariaDB.current().add_unreleased_message(
+				self.client_id, message_id, message)
 			yield self.__send_pubrec(message_id)
 			raise gen.Return(None)
 
@@ -231,6 +233,7 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
+		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrec(self, pack):
@@ -244,6 +247,7 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
+		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 		yield self.__send_pubrel(message_id)
 
 	@gen.coroutine
@@ -258,6 +262,7 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
+		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrel(self, pack):
@@ -268,10 +273,8 @@ class MqttConnection():
 		remaining_buffer = pack.get('remaining_buffer')
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
 		message_id = int(message_id)
-		handle = self.retry_callbacks.pop(message_id, None)
-		if handle is not None:
-			self.loop.remove_timeout(handle)
 		message = self.unreleased_messages.pop(message_id, None)
+		MariaDB.current().remove_unreleased_message(self.client_id, message_id)
 		self.publish_message(message)
 		yield self.__send_pubcomp(message_id)
 
@@ -312,8 +315,8 @@ class MqttConnection():
 		message.message_id = message_id
 		yield self.write(message)
 
-	@gen.coroutine
-	def send_publish(self, qos, topic, payload, retain):
+	@classmethod
+	def build_publish_message(cls, qos, topic, payload, retain):
 		payload_ = bytearray()
 		payload_.extend(struct.pack('!%ss' % len(payload), str(payload)))
 		topic_ = bytearray()
@@ -338,7 +341,17 @@ class MqttConnection():
 		message.buffer.extend(payload_)
 		message.qos = qos
 		message.message_type = PUBLISH
+		return message
+
+	@gen.coroutine
+	def send_publish(self, qos, topic, payload, retain):
+		message = MqttConnection.build_publish_message(qos, topic, payload, retain)
 		yield self.write(message)
+
+	@classmethod
+	def save_offline_message(cls, client_id, qos, topic, payload, retain):
+		message = MqttConnection.build_publish_message(qos, topic, payload, retain)
+		MariaDB.current().add_outgoing_message(client_id, message)
 
 	@gen.coroutine
 	def publish_message(self, message):
@@ -424,14 +437,24 @@ class MqttConnection():
 			# If the Password flag is set to 1
 				(password, offset) = self.__read_next_string(payload, offset)
 		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
-		self.clean_session = connect_flags & 0x1 == 0x1
+		self.clean_session = connect_flags & 0x2 == 0x2
+		print 'connect_flags is %s' % connect_flags
+		print 'clean_session is %s' % self.clean_session
 		if not self.login():
 			self.close()
 			raise gen.Return(None)
+		self.unreleased_messages = MariaDB.current().fetch_unreleased_messages(client_id)
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
+		self.__send_offline_message()
+
+	def __send_offline_message(self):
+		# Resend offline message
+		messages = MariaDB.current().fetch_outgoing_messages(self.client_id)
+		for message in messages:
+			self.loop.add_callback(self.write, message, False)
 
 	def keep_alive_callback(self):
 		now = self.loop.time()
@@ -492,12 +515,11 @@ class MqttConnection():
 		# Debug
 		print '__close_callback() is called'
 		self.state = 'CLOSING'
+		self.__clean_session()
 		if hasattr(self, 'wait_connect_handle'):
 			self.loop.remove_timeout(self.wait_connect_handle)
 		if hasattr(self, 'keep_alive_handle'):
 			self.loop.remove_timeout(self.keep_alive_handle)
-		if hasattr(self, 'clean_session'):
-			self.server.clean_session(self)
 		if hasattr(self, 'retry_callbacks'):
 			for (message_id, handle) in self.retry_callbacks.items():
 				if handle is not None:
@@ -569,7 +591,7 @@ class MqttConnection():
 			self.retry_callbacks[message_id] = handle
 
 	@gen.coroutine
-	def write(self, message):
+	def write(self, message, persistence=True):
 		"""Message format
 		{
 			'buffer': 'Binary packet',
@@ -579,6 +601,8 @@ class MqttConnection():
 			'retry': 'Deliver retry time(default is 0)'
 		}
 		"""
+		if persistence:
+			MariaDB.current().add_outgoing_message(self.client_id, message)
 		buffstr = str(message.buffer)
 		try:
 			yield self.stream.write(buffstr)
