@@ -277,6 +277,7 @@ class MqttConnection():
 		message = self.unreleased_messages.pop(message_id, None)
 		MariaDB.current().remove_unreleased_message(self.client_id, message_id)
 		self.publish_message(message)
+		print 'PUBCOMP Id is %s' % message_id
 		yield self.__send_pubcomp(message_id)
 
 	@gen.coroutine
@@ -608,7 +609,7 @@ class MqttConnection():
 		if persistence:
 			MariaDB.current().add_outgoing_message(self.client_id, message)
 		buffstr = str(message.buffer)
-		print '(%s)%s' % (message.message_id, buffstr) #TEST
+		print 'Message Id is %s' % message.message_id #TEST
 		try:
 			yield self.stream.write(buffstr)
 		finally:
