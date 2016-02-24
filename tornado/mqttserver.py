@@ -31,14 +31,20 @@ class MqttServer(TCPServer):
 		self.__CONNECTIONS__[connection.client_id] = connection
 		result = MariaDB.current().fetch_subscribes(connection.client_id)
 		for (topic, qos) in result:
+			connection.subscribes[topic] = True
 			self.__SUBSCRIBES__.add_subscribe(
 				topic, connection.client_id, qos, connection)
 		return True
 
+	def clean_raw_session(self, connection):
+		result = MariaDB.current().fetch_subscribes(connection.client_id)
+		for (topic, qos) in result:
+			self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
+		MariaDB.current().remove_subscribes(connection.client_id)
+		MariaDB.current().remove_outgoing_messages(connection.client_id)
+
 	def clean_session(self, connection):
 		self.__CONNECTIONS__.pop(connection.client_id, None)
-		if hasattr(connection, 'clean_session'):
-			print 'connection.clean_session is %s' % connection.clean_session
 		if hasattr(connection, 'clean_session') and not connection.clean_session:
 			return
 		for topic in connection.subscribes:
@@ -95,6 +101,8 @@ class MqttServer(TCPServer):
 					MqttConnection.save_offline_message(
 						client_id, message_id, qos_, message.topic, message.payload, 0x0)
 					continue
+				print 'Send Publish: QoS is %s, Topic is %s, Payload is %s' % \
+					(qos_, message.topic, message.payload)
 				yield connection.send_publish(
 					qos_, message.topic, message.payload, 0x0) # TODO
 				

@@ -101,6 +101,16 @@ class MariaDB():
 		cursor.close()
 		return True
 
+	def remove_subscribes(self, client_id):
+		if client_id is None:
+			return
+		query = ("DELETE FROM mqtt_subscribes WHERE client_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id,))
+		connector.commit()
+		cursor.close()
+
 	def fetch_subscribes(self, client_id):
 		if client_id is None:
 			return
@@ -138,6 +148,17 @@ class MariaDB():
 		connector = self.fetch_connector()
 		cursor = connector.cursor()
 		cursor.execute(query, (client_id, message_id))
+		connector.commit()
+		cursor.close()
+
+	def remove_unreleased_messages(self, client_id):
+		if client_id is None:
+			return
+		query = ("DELETE FROM mqtt_unreleased_messages WHERE client_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id,))
+		connector.commit()
 		cursor.close()
 
 	def fetch_unreleased_messages(self, client_id):
@@ -170,6 +191,17 @@ class MariaDB():
 		connector = self.fetch_connector()
 		cursor = connector.cursor()
 		cursor.execute(query, (client_id, message_id))
+		connector.commit()
+		cursor.close()
+
+	def remove_outgoing_messages(self, client_id):
+		if client_id is None:
+			return
+		query = ("DELETE FROM mqtt_outgoing_messages WHERE client_id = %s")
+		connector = self.fetch_connector()
+		cursor = connector.cursor()
+		cursor.execute(query, (client_id,))
+		connector.commit()
 		cursor.close()
 
 	def fetch_outgoing_messages(self, client_id):

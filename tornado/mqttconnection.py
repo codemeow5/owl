@@ -124,6 +124,7 @@ class MqttConnection():
 			if topic is None:
 				break
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
+			qos = qos << 1
 			self.subscribe(topic, qos)
 			self.subscribes[topic] = True
 			qoss.append(qos)
@@ -144,7 +145,7 @@ class MqttConnection():
 	def __send_suback(self, message_id, qoss):
 		payload = bytearray()
 		for qos in qoss:
-			payload.extend(struct.pack('!B', qos))
+			payload.extend(struct.pack('!B', qos >> 1))
 		remaining_length = 2 + len(payload)
 		message = BinaryMessage()
 		message.buffer.extend(struct.pack('!B', SUBACK))
@@ -178,6 +179,9 @@ class MqttConnection():
 
 	def __clean_session(self):
 		self.server.clean_session(self)
+
+	def __clean_raw_session(self):
+		self.server.clean_raw_session(self)
 
 	@gen.coroutine
 	def __handle_publish(self, pack):
@@ -217,8 +221,9 @@ class MqttConnection():
 			raise gen.Return(None)
 		if qos == QoS2:
 			self.unreleased_messages[message_id] = message
-			MariaDB.current().add_unreleased_message(
-				self.client_id, message_id, message)
+			if not self.clean_session:
+				MariaDB.current().add_unreleased_message(
+					self.client_id, message_id, message)
 			yield self.__send_pubrec(message_id)
 			raise gen.Return(None)
 
@@ -234,7 +239,8 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
-		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+		if not self.clean_session:
+			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrec(self, pack):
@@ -248,7 +254,8 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
-		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+		if not self.clean_session:
+			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 		yield self.__send_pubrel(message_id)
 
 	@gen.coroutine
@@ -263,7 +270,8 @@ class MqttConnection():
 		handle = self.retry_callbacks.pop(message_id, None)
 		if handle is not None:
 			self.loop.remove_timeout(handle)
-		MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+		if not self.clean_session:
+			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrel(self, pack):
@@ -275,7 +283,8 @@ class MqttConnection():
 		(message_id,) = pack['message_id'] = struct.unpack('!H', remaining_buffer)
 		message_id = int(message_id)
 		message = self.unreleased_messages.pop(message_id, None)
-		MariaDB.current().remove_unreleased_message(self.client_id, message_id)
+		if not self.clean_session:
+			MariaDB.current().remove_unreleased_message(self.client_id, message_id)
 		self.publish_message(message)
 		print 'PUBCOMP Id is %s' % message_id
 		yield self.__send_pubcomp(message_id)
@@ -333,6 +342,7 @@ class MqttConnection():
 		remaining_buffer_length = variable_header_length + len(payload_)
 		message = BinaryMessage()
 		byte1 = PUBLISH | qos | retain
+		print 'Byte1 is %s' % byte1
 		message.buffer.extend(struct.pack('!B', byte1))
 		remaining_buffer_length_ = \
 			MqttConnection.__write_remaining_length(remaining_buffer_length)
@@ -350,6 +360,8 @@ class MqttConnection():
 	def send_publish(self, qos, topic, payload, retain):
 		message_id = self.server.fetch_message_id()
 		message = MqttConnection.build_publish_message(message_id, qos, topic, payload, retain)
+		print 'Send Publish(Binary): Buffer is "%s", QoS is %s, Message Type is %s' % \
+			(message.buffer, message.qos, message.message_type)
 		yield self.write(message)
 
 	@classmethod
@@ -379,6 +391,7 @@ class MqttConnection():
 			self.close('Client must first sent a CONNECT message, '
 				'now received DISCONNECT message, disconnect the client')
 			raise gen.Return(None)
+		self.received_disconnect = True
 		self.close()
 
 	@gen.coroutine
@@ -442,17 +455,20 @@ class MqttConnection():
 				(password, offset) = self.__read_next_string(payload, offset)
 		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
 		self.clean_session = connect_flags & 0x2 == 0x2
-		print 'connect_flags is %s' % connect_flags
-		print 'clean_session is %s' % self.clean_session
+		if self.clean_session:
+			self.__clean_raw_session()
 		if not self.login():
 			self.close()
 			raise gen.Return(None)
-		self.unreleased_messages = MariaDB.current().fetch_unreleased_messages(client_id)
+		if not self.clean_session:
+			self.unreleased_messages = \
+				MariaDB.current().fetch_unreleased_messages(client_id)
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
-		self.__send_offline_message()
+		if not self.clean_session:
+			self.__send_offline_message()
 
 	def __send_offline_message(self):
 		# Resend offline message
@@ -529,7 +545,7 @@ class MqttConnection():
 			for (message_id, handle) in self.retry_callbacks.items():
 				if handle is not None:
 					self.loop.remove_timeout(handle)
-		if self.stream.error is not None or self.error is not None:
+		if not hasattr(self, 'received_disconnect') or not self.received_disconnect:
 			if hasattr(self, 'will_flag') and self.will_flag:
 				message = MqttMessage(
 					self.will_topic, 
@@ -593,7 +609,7 @@ class MqttConnection():
 				raise gen.Return(None)
 			delay = RETRY_TIMEOUT + message.retry * RETRY_INTERVAL
 			handle = self.loop.call_later(delay, self.__retry, message)
-			self.retry_callbacks[message_id] = handle
+			self.retry_callbacks[message.message_id] = handle
 
 	@gen.coroutine
 	def write(self, message, persistence=True):
@@ -606,10 +622,10 @@ class MqttConnection():
 			'retry': 'Deliver retry time(default is 0)'
 		}
 		"""
-		if persistence:
+		if persistence and not self.clean_session \
+			and message.qos > 0 and message.message_id is not None:
 			MariaDB.current().add_outgoing_message(self.client_id, message)
 		buffstr = str(message.buffer)
-		print 'Message Id is %s' % message.message_id #TEST
 		try:
 			yield self.stream.write(buffstr)
 		finally:
