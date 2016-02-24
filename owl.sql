@@ -37,7 +37,6 @@ CREATE TABLE `mqtt_outgoing_messages` (
 
 LOCK TABLES `mqtt_outgoing_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_outgoing_messages` DISABLE KEYS */;
-INSERT INTO `mqtt_outgoing_messages` VALUES ('clean retained',2,'%D ,  @  \n',144,0),('myclientid',2,'1,@\\ !E1O<&EC00 \"<6]S(#$ \n',48,2),('myclientid',3,'1,@\\ !E1O<&EC00 #<6]S(#( \n',48,2),('myclientid',4,'$< ( !   \n',112,0),('myclientid',5,'$0 ( !0  \n',64,0),('myclientid',6,'$4 ( !@  \n',80,0),('myclientid',7,'%D , !P( \n',144,0);
 /*!40000 ALTER TABLE `mqtt_outgoing_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -61,7 +60,6 @@ CREATE TABLE `mqtt_retain_messages` (
 
 LOCK TABLES `mqtt_retain_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_retain_messages` DISABLE KEYS */;
-INSERT INTO `mqtt_retain_messages` VALUES ('TopicA/B','qos 0',0),('Topic/C','qos 1',2);
 /*!40000 ALTER TABLE `mqtt_retain_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -111,7 +109,6 @@ CREATE TABLE `mqtt_unreleased_messages` (
 
 LOCK TABLES `mqtt_unreleased_messages` WRITE;
 /*!40000 ALTER TABLE `mqtt_unreleased_messages` DISABLE KEYS */;
-INSERT INTO `mqtt_unreleased_messages` VALUES ('myclientid',4,'TopicA','qos 2',4,0),('myclientid',6,'TopicA/C','qos 2',4,1);
 /*!40000 ALTER TABLE `mqtt_unreleased_messages` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -197,4 +194,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2016-02-23 20:12:26
+-- Dump completed on 2016-02-24 16:13:05
