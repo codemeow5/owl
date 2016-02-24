@@ -43,7 +43,7 @@ This is an example of a single process, multi-process will be supported in the f
 Test
 ------------
 
-Owl is tested against Eclipse Paho's `MQTT Conformance/Interoperability Testing <http://www.eclipse.org/paho/clients/testing>`.
+Owl is tested against Eclipse Paho's `MQTT Conformance/Interoperability Testing <http://www.eclipse.org/paho/clients/testing>`_.
 
 .. code-block:: bash
 
