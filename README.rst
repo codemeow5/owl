@@ -40,6 +40,32 @@ Here is a simple example using Owl:
 
 This is an example of a single process, multi-process will be supported in the future.
 
+Test
+------------
+
+Owl is tested against Eclipse Paho's `MQTT Conformance/Interoperability Testing <http://www.eclipse.org/paho/clients/testing>`.
+
+.. code-block:: bash
+
+    hostname localhost port 1883
+    clean up starting
+    clean up finished
+    Basic test starting
+    Basic test succeeded
+    Retained message test starting
+    Retained message test succeeded
+    This server is not queueing QoS 0 messages for offline clients
+    Offline message queueing test succeeded
+    Will message test succeeded
+    Overlapping subscriptions test starting
+    This server is publishing one message per each matching overlapping subscription.
+    Overlapping subscriptions test succeeded
+    Keepalive test starting
+    Keepalive test succeeded
+    Redelivery on reconnect test starting
+    Redelivery on reconnect test succeeded
+    test suite succeeded
+
 Documentation
 -------------
 
