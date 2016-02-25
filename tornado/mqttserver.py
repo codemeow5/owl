@@ -41,6 +41,7 @@ class MqttServer(TCPServer):
 		for (topic, qos) in result:
 			self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
 		MariaDB.current().remove_subscribes(connection.client_id)
+		MariaDB.current().remove_unreleased_messages(connection.client_id)
 		MariaDB.current().remove_outgoing_messages(connection.client_id)
 
 	def clean_session(self, connection):
