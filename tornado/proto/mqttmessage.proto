@@ -1,0 +1,8 @@
+package tornado.proto;
+
+message MqttMessage {
+	required string topic = 1;
+	optional string payload = 2;
+	optional int32 qos = 3 [default = 0];
+	optional int32 retain = 4 [default = 0];
+}
