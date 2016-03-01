@@ -6,35 +6,50 @@ from tornado import gen
 from tornado.tcpserver import TCPServer
 from tornado.mqttconnection import MqttConnection
 from tornado.mariadb import MariaDB
-from tornado.trie import Trie
+from tornado.redis import RedisStorage
+from tornado.mqttsession import MqttSessionStorage
 
 class MqttServer(TCPServer):
 
 	def __init__(self):
 		TCPServer.__init__(self)
-		self.__SUBSCRIBES__ = Trie()
-		self.__CONNECTIONS__ = {}
+		#self.__SUBSCRIBES__ = Trie()
+		#self.__CONNECTIONS__ = {}
+		self.__REDIS__ = RedisStorage()
+		self.__SESSIONS__ = MqttSessionStorage()
 		self.__MESSAGE_ID__ = 0
-		MariaDB.current().import_to_memory(self.__SUBSCRIBES__)
+		#MariaDB.current().import_to_memory(self.__SUBSCRIBES__)
+
+	def closeConnection(self, session_id):
+		# TODO Close remote connection
+		pass
+
+	def fetchSession(self, client_id):
+		return self.__REDIS__.fetchSession(client_id)
 
 	def login(self, connection):
-		if connection.client_id is None:
-			return False
-		original = self.__CONNECTIONS__.get(connection.client_id, None)
-		if original is not None:
-			if connection.protocol_version == 0x3:
-				original.close()
-			elif connection.protocol_version == 0x4:
-				return False
-			else:
-				return False
-		self.__CONNECTIONS__[connection.client_id] = connection
-		result = MariaDB.current().fetch_subscribes(connection.client_id)
-		for (topic, qos) in result:
-			connection.subscribes[topic] = True
-			self.__SUBSCRIBES__.add_subscribe(
-				topic, connection.client_id, qos, connection)
-		return True
+		client_id = connection.client_id
+		if client_id is None or len(client_id) == 0:
+			raise Exception('Missing argument \'client_id\'')
+		self.__SESSIONS__.save(connection)
+		
+		# TODO Check whether the client has been log in the cluster
+		#original = self.__CONNECTIONS__.get(connection.client_id, None)
+		#if original is not None:
+		#	if connection.protocol_version == 0x3:
+		#		original.close()
+		#	elif connection.protocol_version == 0x4:
+		#		return False
+		#	else:
+		#		return False
+		#self.__CONNECTIONS__[connection.client_id] = connection
+		# TODO Nothing to do
+		#result = MariaDB.current().fetch_subscribes(connection.client_id)
+		#for (topic, qos) in result:
+		#	connection.subscribes[topic] = True
+		#	self.__SUBSCRIBES__.add_subscribe(
+		#		topic, connection.client_id, qos, connection)
+		#return True
 
 	def clean_raw_session(self, connection):
 		result = MariaDB.current().fetch_subscribes(connection.client_id)

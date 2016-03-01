@@ -3,6 +3,7 @@
 import struct
 import time
 from tornado import gen
+from tornado import mqttutil
 from tornado.ioloop import IOLoop
 from functools import partial
 from tornado.mariadb import MariaDB
@@ -373,6 +374,12 @@ class MqttConnection():
 	def publish_message(self, message):
 		yield self.server.publish_message(message)
 
+	def closeConnection(self, session_id):
+		return self.server.closeConnection(session_id)
+
+	def fetchSession(self, client_id):
+		return self.server.fetchSession(client_id)
+
 	def login(self):
 		return self.server.login(self)
 
@@ -457,9 +464,19 @@ class MqttConnection():
 		self.clean_session = connect_flags & 0x2 == 0x2
 		if self.clean_session:
 			self.__clean_raw_session()
-		if not self.login():
-			self.close()
-			raise gen.Return(None)
+		originalSession = self.fetchSession(client_id)
+		if originalSession is not None:
+			if self.protocol_version == 0x3:
+				self.closeConnection(originalSession)
+			elif self.protocol_version == 0x4:
+				self.close()
+				raise gen.Return(None)
+			else:
+				self.close()
+				raise gen.Return(None)
+		#if not self.login():
+		#	self.close()
+		#	raise gen.Return(None)
 		if not self.clean_session:
 			self.unreleased_messages = \
 				MariaDB.current().fetch_unreleased_messages(client_id)
@@ -557,6 +574,7 @@ class MqttConnection():
 
 	def __init__(self, server, stream, address):
 
+		self.session_id = mqttutil.gen_session_id()
 		self.server = server
 		self.stream = stream
 		self.address = address
