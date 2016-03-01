@@ -374,6 +374,9 @@ class MqttConnection():
 	def publish_message(self, message):
 		yield self.server.publish_message(message)
 
+	def redis(self):
+		return self.server.redis()
+
 	def closeConnection(self, session_id):
 		return self.server.closeConnection(session_id)
 
@@ -462,8 +465,6 @@ class MqttConnection():
 				(password, offset) = self.__read_next_string(payload, offset)
 		self.keep_alive = pack['keep_alive'] = remaining_buffer_tuple[4]
 		self.clean_session = connect_flags & 0x2 == 0x2
-		if self.clean_session:
-			self.__clean_raw_session()
 		originalSession = self.fetchSession(client_id)
 		if originalSession is not None:
 			if self.protocol_version == 0x3:
@@ -477,11 +478,14 @@ class MqttConnection():
 		#if not self.login():
 		#	self.close()
 		#	raise gen.Return(None)
-		if not self.clean_session:
+		if self.clean_session:
+			self.clearSessionState(client_id)
+		else:
 			self.unreleased_messages = \
-				MariaDB.current().fetch_unreleased_messages(client_id)
+				self.redis().fetchUnreleasedMessages(client_id)
 		yield self.__send_connack(0x0)
 		self.state = 'CONNECTED'
+		self.login()
 		if self.keep_alive > 0:
 			self.keep_alive_callback()
 		if not self.clean_session:

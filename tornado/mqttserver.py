@@ -20,6 +20,9 @@ class MqttServer(TCPServer):
 		self.__MESSAGE_ID__ = 0
 		#MariaDB.current().import_to_memory(self.__SUBSCRIBES__)
 
+	def redis(self):
+		return self.__REDIS__
+
 	def closeConnection(self, session_id):
 		# TODO Close remote connection
 		pass
@@ -51,20 +54,25 @@ class MqttServer(TCPServer):
 		#		topic, connection.client_id, qos, connection)
 		#return True
 
-	def clean_raw_session(self, connection):
-		result = MariaDB.current().fetch_subscribes(connection.client_id)
-		for (topic, qos) in result:
-			self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
-		MariaDB.current().remove_subscribes(connection.client_id)
-		MariaDB.current().remove_unreleased_messages(connection.client_id)
-		MariaDB.current().remove_outgoing_messages(connection.client_id)
+	def clearSessionState(self, client_id):
+		self.__REDIS__.clearSubscription(client_id)
+		self.__REDIS__.clearUnreleasedMessages(client_id)
+		self.__REDIS__.clearOutgoingMessages(client_id)
 
-	def clean_session(self, connection):
-		self.__CONNECTIONS__.pop(connection.client_id, None)
-		if hasattr(connection, 'clean_session') and not connection.clean_session:
-			return
-		for topic in connection.subscribes:
-			self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
+	#def clean_raw_session(self, connection):
+	#	result = MariaDB.current().fetch_subscribes(connection.client_id)
+	#	for (topic, qos) in result:
+	#		self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
+	#	MariaDB.current().remove_subscribes(connection.client_id)
+	#	MariaDB.current().remove_unreleased_messages(connection.client_id)
+	#	MariaDB.current().remove_outgoing_messages(connection.client_id)
+
+	#def clean_session(self, connection):
+	#	self.__CONNECTIONS__.pop(connection.client_id, None)
+	#	if hasattr(connection, 'clean_session') and not connection.clean_session:
+	#		return
+	#	for topic in connection.subscribes:
+	#		self.__SUBSCRIBES__.remove_subscribe(topic, connection.client_id)
 
 	def get_retain_messages(self, topic):
 		nodes = self.__SUBSCRIBES__.matches_sub(topic)

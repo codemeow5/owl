@@ -62,6 +62,12 @@ def gen_redis_retain_msg_key(topic):
 def gen_redis_session_key(client_id):
 	return 'SESSION:' + client_id
 
+def gen_redis_unrel_key(client_id):
+	return 'UNREL:' + client_id
+
+def gen_redis_outgoing_key(client_id):
+	return 'OUTGOING:' + client_id
+
 def gen_session_id():
 	return options.address + ':' + \
 		options.port + '@' + \

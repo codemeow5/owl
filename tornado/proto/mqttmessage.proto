@@ -6,3 +6,10 @@ message MqttMessage {
 	optional int32 qos = 3 [default = 0];
 	optional int32 retain = 4 [default = 0];
 }
+
+message NetworkMessage {
+	required bytes buffer = 1;
+	required int32 message_type = 2;
+	required int32 message_id = 3;
+	optional int32 qos = 4 [default = 0];
+}

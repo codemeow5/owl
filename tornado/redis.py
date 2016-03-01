@@ -2,7 +2,7 @@
 
 import redis
 from tornado import mqttutil
-from tornado.proto.mqttmessage_pb2 import MqttMessage
+from tornado.proto.mqttmessage_pb2 import MqttMessage, NetworkMessage
 
 # TODO Sharing session state between multiple broker process
 class BrokerRedisStorage():
@@ -37,6 +37,8 @@ class RedisStorage():
 	# SUBSCRIPTION:CLIENT:[client id] is a list of topic associated with client
 	# RETAINMSG:[topic name] is the retain message associated with topic
 	# SESSION:[client id] is the session associated with client
+	# UNREL:[client id] is a list of unrelease message associated with client
+	# OUTGOING:[client id] is a list of outgoing message associated with client
 	# SessionId format is [Broker IpAddress:Port]@[Client GUID]
 
 	# Run only once at the time of installation
@@ -45,6 +47,100 @@ class RedisStorage():
 
 	def __init__(self):
 		pass
+
+	def addUnreleasedMessage(self, client_id, message):
+		if client_id is None or message is None:
+			return
+		r = self.__r__()
+		message_id = message.message_id
+		messageStream = message.SerializeToString()
+		r.hset(mqttutil.gen_redis_unrel_key(client_id), message_id, messageStream)
+
+	def removeUnreleasedMessage(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		r = self.__r__()
+		r.hdel(mqttutil.gen_redis_unrel_key(client_id), message_id)
+
+	def clearUnreleasedMessages(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		r.del(mqttutil.gen_redis_unrel_key(client_id))
+
+	def fetchUnreleasedMessage(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		r = self.__r__()
+		messageStream = r.hget(mqttutil.gen_redis_unrel_key(client_id), message_id)
+		message = NetworkMessage()
+		message.ParseFromString(messageStream)
+		return message
+
+	def fetchUnreleasedMessageIds(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		return r.hkeys(mqttutil.gen_redis_unrel_key(client_id))
+
+	def fetchUnreleasedMessages(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		messageStreams = r.hvals(mqttutil.gen_redis_unrel_key(client_id))
+		messages = []
+		for messageStream in messageStreams:
+			message = NetworkMessage()
+			message.ParseFromString(messageStream)
+			messages.append(message)
+		return messages
+
+	def addOutgoingMessage(self, client_id, message):
+		if client_id is None or message is None:
+			return
+		r = self.__r__()
+		message_id = message.message_id
+		messageStream = message.SerializeToString()
+		r.hset(mqttutil.gen_redis_outgoing_key(client_id), message_id, messageStream)
+
+	def removeOutgoingMessage(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		r = self.__r__()
+		r.hdel(mqttutil.gen_redis_outgoing_key(client_id), message_id)
+
+	def clearOutgoingMessages(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		r.del(mqttutil.gen_redis_outgoing_key(client_id))
+
+	def fetchOutgoingMessage(self, client_id, message_id):
+		if client_id is None or message_id is None:
+			return
+		r = self.__r__()
+		messageStream = r.hget(mqttutil.gen_redis_outgoing_key(client_id), message_id)
+		message = NetworkMessage()
+		message.ParseFromString(messageStream)
+		return message
+
+	def fetchOutgoingMessageIds(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		return r.hkeys(mqttutil.gen_redis_outgoing_key(client_id))
+
+	def fetchOutgoingMessages(self, client_id):
+		if client_id is None:
+			return
+		r = self.__r__()
+		messageStreams = r.hvals(mqttutil.gen_redis_outgoing_key(client_id))
+		messages = []
+		for messageStream in messageStreams:
+			message = NetworkMessage()
+			message.ParseFromString(messageStream)
+			messages.append(message)
+		return messages
 
 	def checkEmptyTopic(self, topic):
 		r = self.__r__()
@@ -99,6 +195,15 @@ class RedisStorage():
 				r.srem(mqttutil.gen_redis_topic_key(parentTopic), topic_)
 				topic_ = parentTopic
 		r.srem(mqttutil.gen_redis_client_sub_key(client_id), topic)
+
+	def clearSubscription(self, client_id):
+		r = self.__r__()
+		topics = r.hkeys(mqttutil.gen_redis_client_sub_key(client_id))
+		r.del(mqttutil.gen_redis_client_sub_key(client_id))
+		if topics is None:
+			return
+		for topic in topics:
+			self.removeSubscription(topic, client_id)
 
 	def setRetainMessage(self, message):
 		topic = message.topic
