@@ -22,6 +22,14 @@ class MqttSessionStorage():
 		self.__SESSIONS__[session_id] = connection
 		self.__CLIENTS__[client_id] = connection
 
+	def get(self, session_id=None, client_id=None):
+		if session_id is not None:
+			return self.__SESSIONS__.get(session_id, None)
+		elif client_id is not None:
+			return self.__CLIENTS__.get(client_id, None)
+		else:
+			raise Exception('Missing arguments \'client_id\' and \'session_id\'')
+
 	def remove(self, session_id=None, client_id=None):
 		if session_id is not None:
 			connection = self.__SESSIONS__.pop(session_id, None)

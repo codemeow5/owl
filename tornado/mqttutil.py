@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import pdb
-import uuid
+import os, uuid
 from tornado.options import OptionParser
 
 options = OptionParser()

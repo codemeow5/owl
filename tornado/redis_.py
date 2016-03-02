@@ -1,14 +1,22 @@
 #!/usr/bin/python
 
+import pdb
+import os
 import redis
 from tornado import mqttutil
+from tornado.options import OptionParser
 from tornado.proto.mqttmessage_pb2 import MqttMessage, NetworkMessage
+
+options = OptionParser()
+options.define("redis_address", default='127.0.0.1')
+options.define("redis_port", default='6379')
+options.parse_config_file(os.path.join(os.getcwd(), "owl.cfg"))
 
 # TODO Sharing session state between multiple broker process
 class BrokerRedisStorage():
 
 	def __r__(self):
-		if self.__REDIS__ is None:
+		if not hasattr(self, '__REDIS__') or self.__REDIS__ is None:
 			try:
 				r = self.__REDIS__ = redis.StrictRedis(
 					unix_socket_path='/var/run/redis/redis-6400.sock',
@@ -21,10 +29,11 @@ class BrokerRedisStorage():
 class RedisStorage():
 
 	def __r__(self):
-		if self.__REDIS__ is None:
+		if not hasattr(self, '__REDIS__') or self.__REDIS__ is None:
 			try:
 				r = self.__REDIS__ = redis.StrictRedis(
-					unix_socket_path='/var/run/redis/redis-6400.sock',
+					host=options.redis_address,
+					port=int(options.redis_port),
 					db=0)
 			except Exception, e:
 				self.__REDIS__ = None
@@ -66,7 +75,7 @@ class RedisStorage():
 		if client_id is None:
 			return
 		r = self.__r__()
-		r.del(mqttutil.gen_redis_unrel_key(client_id))
+		r.delete(mqttutil.gen_redis_unrel_key(client_id))
 
 	def fetchUnreleasedMessage(self, client_id, message_id):
 		if client_id is None or message_id is None:
@@ -100,6 +109,7 @@ class RedisStorage():
 			return
 		r = self.__r__()
 		message_id = message.message_id
+		message.buffer_ = binascii.b2a_uu(message.buffer)
 		messageStream = message.SerializeToString()
 		r.hset(mqttutil.gen_redis_outgoing_key(client_id), message_id, messageStream)
 
@@ -113,7 +123,7 @@ class RedisStorage():
 		if client_id is None:
 			return
 		r = self.__r__()
-		r.del(mqttutil.gen_redis_outgoing_key(client_id))
+		r.delete(mqttutil.gen_redis_outgoing_key(client_id))
 
 	def fetchOutgoingMessage(self, client_id, message_id):
 		if client_id is None or message_id is None:
@@ -122,6 +132,7 @@ class RedisStorage():
 		messageStream = r.hget(mqttutil.gen_redis_outgoing_key(client_id), message_id)
 		message = NetworkMessage()
 		message.ParseFromString(messageStream)
+		message.buffer = binascii.a2b_uu(message.buffer_)
 		return message
 
 	def fetchOutgoingMessageIds(self, client_id):
@@ -144,10 +155,9 @@ class RedisStorage():
 
 	def checkEmptyTopic(self, topic):
 		r = self.__r__()
-		if r.exists(
-			mqttutil.gen_redis_topic_key(topic), 
-			mqttutil.gen_redis_sub_key(topic), 
-			mqttutil.gen_redis_retain_msg_key(topic)) == 0:
+		if r.exists(mqttutil.gen_redis_topic_key(topic)) == 0 and \
+			r.exists(mqttutil.gen_redis_sub_key(topic)) == 0 and \
+			r.exists(mqttutil.gen_redis_retain_msg_key(topic)) == 0:
 			return True
 		return False
 
@@ -161,9 +171,9 @@ class RedisStorage():
 
 	def removeSession(self, client_id):
 		r = self.__r__()
-		r.del(mqttutil.gen_redis_session_key(client_id))
+		r.delete(mqttutil.gen_redis_session_key(client_id))
 
-	def addSubscription(self, topic, client_id, qos, session_id):
+	def addSubscription(self, topic, client_id, qos):
 		if not mqttutil.sub_topic_check(topic):
 			raise Exception('Invalid topic format')
 		r = self.__r__()
@@ -179,7 +189,6 @@ class RedisStorage():
 			parentTopic = mqttutil.gen_redis_topic_key(currentTopic)
 		pipe.hset(mqttutil.gen_redis_sub_key(topic), client_id, qos)
 		pipe.sadd(mqttutil.gen_redis_client_sub_key(client_id), topic)
-		pipe.setbit(mqttutil.gen_redis_topic_metadata_key(topic), 8, 1) 
 		pipe.execute()
 
 	def removeSubscription(self, topic, client_id):
@@ -196,10 +205,15 @@ class RedisStorage():
 				topic_ = parentTopic
 		r.srem(mqttutil.gen_redis_client_sub_key(client_id), topic)
 
+	def fetchSubClients(self, topic):
+		r = self.__r__()
+		clients = r.hgetall(mqttutil.gen_redis_sub_key(topic))
+		return clients
+
 	def clearSubscription(self, client_id):
 		r = self.__r__()
-		topics = r.hkeys(mqttutil.gen_redis_client_sub_key(client_id))
-		r.del(mqttutil.gen_redis_client_sub_key(client_id))
+		topics = r.smembers(mqttutil.gen_redis_client_sub_key(client_id))
+		r.delete(mqttutil.gen_redis_client_sub_key(client_id))
 		if topics is None:
 			return
 		for topic in topics:
@@ -213,6 +227,27 @@ class RedisStorage():
 		r = self.__r__()
 		r.set(mqttutil.gen_redis_retain_msg_key(topic), messageStream)
 
+	def fetchRetainMessage(self, topic):
+		if not mqttutil.pub_topic_check(topic):
+			raise Exception('Invalid topic format')
+		r = self.__r__()
+		messageStream = r.get(mqttutil.gen_redis_retain_msg_key(topic))
+		if messageStream is None:
+			return None
+		message = MqttMessage()
+		message.ParseFromString(messageStream)
+		return message
+
+	def fetchRetainMessages(self, topic):
+		r = self.__r__()
+		matchTopics = self.matchSubscription(topic)
+		messages = []
+		for matchTopic in matchTopics:
+			message = self.fetchRetainMessage(matchTopic)
+			if message is not None:
+				messages.append(message)
+		return messages
+
 	def matchSubscription(self, topic):
 		if not mqttutil.sub_topic_check(topic):
 			raise Exception('Invalid topic format')
@@ -223,25 +258,29 @@ class RedisStorage():
 		while True:
 			preIndex = index
 			index = topic.find('/', index + 1)
-			currentWord = topic[preIndex:index]
+			currentWord = topic[preIndex:index] if index <> -1 else topic[preIndex:]
 			parentTopics_ = parentTopics
 			parentTopics = []
 			r = self.__r__()
 			for parentTopic in parentTopics_:
 				if currentWord == '#':
-					parentTopics.extend(self.flatSubscription(parentTopic))
+					matches.extend(self.flatSubscription(parentTopic))
 				elif currentWord == '+':
 					childrenTopics = r.smembers(
 						mqttutil.gen_redis_topic_key(parentTopic))
-					parentTopics.extend(childrenTopics)
+					for childrenTopic in childrenTopics:
+						if mqttutil.pub_topic_check(childrenTopic):
+							parentTopics.append(childrenTopic)
 				else:
-					childrenTopic = parentTopic + '/' + currentWord
+					childrenTopic = parentTopic + '/' + currentWord \
+						if preIndex <> 0 else currentWord
 					if r.sismember(
 						mqttutil.gen_redis_topic_key(parentTopic), 
 						childrenTopic):
 						parentTopics.append(childrenTopic)
 			if index == -1:
 				matches.extend(parentTopics)
+				break
 		return matches
 
 	def matchPublish(self, topic):
@@ -254,22 +293,35 @@ class RedisStorage():
 		while True:
 			preIndex = index
 			index = topic.find('/', index + 1)
-			currentWord = topic[preIndex:index]
+			currentWord = topic[preIndex:index] if index <> -1 else topic[preIndex:]
 			parentTopics_ = parentTopics
 			parentTopics = []
 			r = self.__r__()
 			for parentTopic in parentTopics_:
-				childrenTopic = parentTopic + '/' + currentWord
+				childrenTopic = parentTopic + '/' + currentWord \
+					if preIndex <> 0 else currentWord
 				if childrenTopic is not None:
-					parentTopics.append(childrenTopic)
-				childrenTopic = parentTopic + '/' + '+'
+					if r.sismember(
+						mqttutil.gen_redis_topic_key(parentTopic),
+						childrenTopic):
+						parentTopics.append(childrenTopic)
+				childrenTopic = parentTopic + '/' + '+' \
+					if preIndex <> 0 else '+'
 				if childrenTopic is not None:
-					parentTopics.append(childrenTopic)
-				childrenTopic = parentTopic + '/' + '#'
+					if r.sismember(
+						mqttutil.gen_redis_topic_key(parentTopic),
+						childrenTopic):
+						parentTopics.append(childrenTopic)
+				childrenTopic = parentTopic + '/' + '#' \
+					if preIndex <> 0 else '#'
 				if childrenTopic is not None:
-					matches.append(chilrenTopic)
+					if r.sismember(
+						mqttutil.gen_redis_topic_key(parentTopic),
+						childrenTopic):
+						matches.append(childrenTopic)
 			if index == -1:
 				matches.extend(parentTopics)
+				break
 		return matches
 
 	def flatSubscription(self, topic, resultTopics=None):
@@ -277,11 +329,12 @@ class RedisStorage():
 		if resultTopics is None:
 			resultTopics = []
 		childrenTopics = r.smembers(mqttutil.gen_redis_topic_key(topic))
-		resultTopics.extend(childrenTopics)
 		for childrenTopic in childrenTopics:
-			resultTopics.extend(self.flatSubscription(childrenTopic, resultTopics))
+			if mqttutil.pub_topic_check(childrenTopic):
+				resultTopics.append(childrenTopic)
+				resultTopics.extend(
+					self.flatSubscription(childrenTopic, resultTopics))
 		return resultTopics
-
 
 
 

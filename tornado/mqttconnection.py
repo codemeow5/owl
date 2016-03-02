@@ -2,12 +2,12 @@
 
 import struct
 import time
+import binascii
 from tornado import gen
 from tornado import mqttutil
 from tornado.ioloop import IOLoop
 from functools import partial
-from tornado.mariadb import MariaDB
-from tornado.mqttmessage import MqttMessage, BinaryMessage
+from tornado.proto.mqttmessage_pb2 import MqttMessage, NetworkMessage
 import pdb
 
 # Constant
@@ -101,8 +101,10 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_pingresp(self):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2B', PINGRESP, 0))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2B', PINGRESP, 0))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = PINGRESP
 		yield self.write(message)
 
@@ -127,13 +129,16 @@ class MqttConnection():
 			((qos,), offset) = self.__read_next_buffer(payload, offset, 1)
 			qos = qos << 1
 			self.subscribe(topic, qos)
-			self.subscribes[topic] = True
+			#self.subscribes[topic] = True
 			qoss.append(qos)
-			retain_messages_ = self.get_retain_messages(topic)
+			retain_messages_ = self.redis().fetchRetainMessages(topic)
 			for retain_message in retain_messages_:
 				qos = retain_message.qos if qos > retain_message.qos else qos
-				retain_messages.append(
-					MqttMessage(retain_message.topic, retain_message.payload, qos))
+				message_ = MqttMessage()
+				message_.topic = retain_message.topic
+				message_.payload = retain_message.payload
+				message_.qos = qos
+				retain_messages.append(message_)
 		yield self.__send_suback(message_id, qoss)
 		for retain_message in retain_messages:
 			yield self.send_publish(
@@ -148,11 +153,13 @@ class MqttConnection():
 		for qos in qoss:
 			payload.extend(struct.pack('!B', qos >> 1))
 		remaining_length = 2 + len(payload)
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!B', SUBACK))
-		message.buffer.extend(self.__write_remaining_length(remaining_length))
-		message.buffer.extend(struct.pack('!H', message_id))
-		message.buffer.extend(payload)
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!B', SUBACK))
+		buffer.extend(self.__write_remaining_length(remaining_length))
+		buffer.extend(struct.pack('!H', message_id))
+		buffer.extend(payload)
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = SUBACK
 		message.message_id = message_id
 		yield self.write(message)
@@ -174,18 +181,25 @@ class MqttConnection():
 			if topic is None:
 				break
 			self.unsubscribe(topic)
-			self.subscribes.pop(topic, None)
+			#self.subscribes.pop(topic, None)
 		# TODO response UNSUBACK
 		yield self.__send_unsuback(message_id)
 
-	def __clean_session(self):
-		self.server.clean_session(self)
+	def cleanSession(self):
+		client_id = self.client_id
+		if client_id is None or len(client_id) == 0:
+			return
+		self.server.cleanSession(self.client_id)
 
-	def __clean_raw_session(self):
-		self.server.clean_raw_session(self)
+	def cleanSessionState(self):
+		self.server.cleanSessionState(self.client_id)
+
+	#def __clean_raw_session(self):
+	#	self.server.clean_raw_session(self)
 
 	@gen.coroutine
 	def __handle_publish(self, pack):
+		pdb.set_trace()
 		if self.state <> 'CONNECTED':
 			self.close('Client must first sent a CONNECT message, '
 				'now received PUBLISH message, disconnect the client')
@@ -212,7 +226,11 @@ class MqttConnection():
 			message_id = int(message_id)
 		payload = pack['payload'] = remaining_buffer_tuple[-1]
 		retain = pack['retain'] = pack.get('cmd') & 0x1
-		message = MqttMessage(topic, payload, qos, retain)
+		message = MqttMessage()
+		message.topic = topic
+		message.payload = payload
+		message.qos = qos
+		message.retain = retain
 		if qos == QoS0:
 			self.publish_message(message)
 			raise gen.Return(None)
@@ -223,8 +241,9 @@ class MqttConnection():
 		if qos == QoS2:
 			self.unreleased_messages[message_id] = message
 			if not self.clean_session:
-				MariaDB.current().add_unreleased_message(
-					self.client_id, message_id, message)
+				#MariaDB.current().add_unreleased_message(
+				#	self.client_id, message_id, message)
+				self.redis().addUnreleasedMessage(self.client_id, message)
 			yield self.__send_pubrec(message_id)
 			raise gen.Return(None)
 
@@ -241,7 +260,8 @@ class MqttConnection():
 		if handle is not None:
 			self.loop.remove_timeout(handle)
 		if not self.clean_session:
-			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			#MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			self.redis().removeOutgoingMessage(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrec(self, pack):
@@ -256,7 +276,8 @@ class MqttConnection():
 		if handle is not None:
 			self.loop.remove_timeout(handle)
 		if not self.clean_session:
-			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			#MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			self.redis().removeOutgoingMessage(self.client_id, message_id)
 		yield self.__send_pubrel(message_id)
 
 	@gen.coroutine
@@ -272,7 +293,8 @@ class MqttConnection():
 		if handle is not None:
 			self.loop.remove_timeout(handle)
 		if not self.clean_session:
-			MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			#MariaDB.current().remove_outgoing_message(self.client_id, message_id)
+			self.redis().removeOutgoingMessage(self.client_id, message_id)
 
 	@gen.coroutine
 	def __handle_pubrel(self, pack):
@@ -285,25 +307,30 @@ class MqttConnection():
 		message_id = int(message_id)
 		message = self.unreleased_messages.pop(message_id, None)
 		if not self.clean_session:
-			MariaDB.current().remove_unreleased_message(self.client_id, message_id)
+			#MariaDB.current().remove_unreleased_message(self.client_id, message_id)
+			self.redis().removeOutgoingMessage(self.client_id, message_id)
 		self.publish_message(message)
 		print 'PUBCOMP Id is %s' % message_id
 		yield self.__send_pubcomp(message_id)
 
 	@gen.coroutine
 	def __send_pubrec(self, message_id):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2B', PUBREC, 2))
-		message.buffer.extend(struct.pack('!H', message_id))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2B', PUBREC, 2))
+		buffer.extend(struct.pack('!H', message_id))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = PUBREC
 		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubrel(self, message_id):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2B', PUBREL | QoS1, 2))
-		message.buffer.extend(struct.pack('!H', message_id))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2B', PUBREL | QoS1, 2))
+		buffer.extend(struct.pack('!H', message_id))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.qos = QoS1
 		message.message_type = PUBREL
 		message.message_id = message_id
@@ -311,18 +338,22 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_puback(self, message_id):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2B', PUBACK, 2))
-		message.buffer.extend(struct.pack('!H', message_id))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2B', PUBACK, 2))
+		buffer.extend(struct.pack('!H', message_id))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = PUBACK
 		message.message_id = message_id
 		yield self.write(message)
 
 	@gen.coroutine
 	def __send_pubcomp(self, message_id):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2B', PUBCOMP, 2))
-		message.buffer.extend(struct.pack('!H', message_id))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2B', PUBCOMP, 2))
+		buffer.extend(struct.pack('!H', message_id))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = PUBCOMP
 		message.message_id = message_id
 		yield self.write(message)
@@ -341,18 +372,20 @@ class MqttConnection():
 		else:
 			variable_header_length = len(topic_) + 2
 		remaining_buffer_length = variable_header_length + len(payload_)
-		message = BinaryMessage()
+		message = NetworkMessage()
+		buffer = bytearray()
 		byte1 = PUBLISH | qos | retain
 		print 'Byte1 is %s' % byte1
-		message.buffer.extend(struct.pack('!B', byte1))
+		buffer.extend(struct.pack('!B', byte1))
 		remaining_buffer_length_ = \
 			MqttConnection.__write_remaining_length(remaining_buffer_length)
-		message.buffer.extend(remaining_buffer_length_)
-		message.buffer.extend(topic_)
+		buffer.extend(remaining_buffer_length_)
+		buffer.extend(topic_)
 		if qos <> QoS0:
 			message.message_id = message_id
 			message.buffer.extend(struct.pack('!H', message.message_id))
-		message.buffer.extend(payload_)
+		buffer.extend(payload_)
+		message.buffer = binascii.b2a_uu(buffer)
 		message.qos = qos
 		message.message_type = PUBLISH
 		return message
@@ -368,7 +401,8 @@ class MqttConnection():
 	@classmethod
 	def save_offline_message(cls, client_id, message_id, qos, topic, payload, retain):
 		message = MqttConnection.build_publish_message(message_id, qos, topic, payload, retain)
-		MariaDB.current().add_outgoing_message(client_id, message)
+		#MariaDB.current().add_outgoing_message(client_id, message)
+		self.redis().addOutgoingMessage(client_id, message)
 
 	@gen.coroutine
 	def publish_message(self, message):
@@ -392,8 +426,8 @@ class MqttConnection():
 	def unsubscribe(self, topic):
 		self.server.unsubscribe(self, topic)
 
-	def get_retain_messages(self, topic):
-		return self.server.get_retain_messages(topic)
+	#def get_retain_messages(self, topic):
+	#	return self.server.get_retain_messages(topic)
 
 	@gen.coroutine
 	def __handle_disconnect(self, pack):
@@ -406,8 +440,10 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_unsuback(self, message_id):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!2BH', UNSUBACK, 2, message_id))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = UNSUBACK
 		message.message_id = message_id
 		yield self.write(message)
@@ -479,7 +515,7 @@ class MqttConnection():
 		#	self.close()
 		#	raise gen.Return(None)
 		if self.clean_session:
-			self.clearSessionState(client_id)
+			self.cleanSessionState()
 		else:
 			self.unreleased_messages = \
 				self.redis().fetchUnreleasedMessages(client_id)
@@ -493,7 +529,8 @@ class MqttConnection():
 
 	def __send_offline_message(self):
 		# Resend offline message
-		messages = MariaDB.current().fetch_outgoing_messages(self.client_id)
+		#messages = MariaDB.current().fetch_outgoing_messages(self.client_id)
+		messages = self.redis().fetchOutgoingMessages(self.client_id)
 		for message in messages:
 			self.loop.add_callback(self.write, message, False)
 
@@ -508,8 +545,10 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __send_connack(self, code):
-		message = BinaryMessage()
-		message.buffer.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
+		message = NetworkMessage()
+		buffer = bytearray()
+		buffer.extend(struct.pack('!4B', CONNACK, 2, 0x0, code))
+		message.buffer = binascii.b2a_uu(buffer)
 		message.message_type = CONNACK
 		yield self.write(message)
 
@@ -557,7 +596,7 @@ class MqttConnection():
 		# Debug
 		print '__close_callback() is called'
 		self.state = 'CLOSING'
-		self.__clean_session()
+		self.cleanSession()
 		if hasattr(self, 'wait_connect_handle'):
 			self.loop.remove_timeout(self.wait_connect_handle)
 		if hasattr(self, 'keep_alive_handle'):
@@ -568,11 +607,11 @@ class MqttConnection():
 					self.loop.remove_timeout(handle)
 		if not hasattr(self, 'received_disconnect') or not self.received_disconnect:
 			if hasattr(self, 'will_flag') and self.will_flag:
-				message = MqttMessage(
-					self.will_topic, 
-					self.will_message, 
-					self.will_qos, 
-					self.will_retain)
+				message = MqttMessage()
+				message.topic = self.will_topic
+				message.payload = self.will_message
+				message.qos = self.will_qos
+				message.retain = self.will_retain
 				self.publish_message(message)
 		self.state = 'CLOSED'
 
@@ -587,7 +626,7 @@ class MqttConnection():
 
 		self.unreleased_messages = {}
 		self.retry_callbacks = {}
-		self.subscribes = {}
+		#self.subscribes = {}
 
 		self.state = 'INITIALIZE'
 		self.error = None
@@ -646,8 +685,10 @@ class MqttConnection():
 		"""
 		if persistence and not self.clean_session \
 			and message.qos > 0 and message.message_id is not None:
-			MariaDB.current().add_outgoing_message(self.client_id, message)
-		buffstr = str(message.buffer)
+			#MariaDB.current().add_outgoing_message(self.client_id, message)
+			self.redis().addOutgoingMessage(self.client_id, message)
+		buffer = binascii.a2b_uu(message.buffer)
+		buffstr = str(buffer)
 		try:
 			yield self.stream.write(buffstr)
 		finally:
