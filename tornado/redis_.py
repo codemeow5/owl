@@ -152,9 +152,9 @@ class RedisStorage():
 
 	def checkEmptyTopic(self, topic):
 		r = self.__r__()
-		if r.exists(mqttutil.gen_redis_topic_key(topic)) == 0 and \
-			r.exists(mqttutil.gen_redis_sub_key(topic)) == 0 and \
-			r.exists(mqttutil.gen_redis_retain_msg_key(topic)) == 0:
+		if r.exists(mqttutil.gen_redis_topic_key(topic)) and \
+			r.exists(mqttutil.gen_redis_sub_key(topic)) and \
+			r.exists(mqttutil.gen_redis_retain_msg_key(topic)):
 			return True
 		return False
 
@@ -179,7 +179,7 @@ class RedisStorage():
 		parentTopic = mqttutil.gen_redis_topic_key('$ROOT')
 		while True:
 			index = topic.find('/', index + 1)
-			currentTopic = topic[:index]
+			currentTopic = topic[:index] if index <> -1 else topic
 			pipe.sadd(parentTopic, topic)
 			if index == -1:
 				break
@@ -222,13 +222,31 @@ class RedisStorage():
 			raise Exception('Invalid topic format')
 		messageStream = message.SerializeToString()
 		r = self.__r__()
-		r.set(mqttutil.gen_redis_retain_msg_key(topic), messageStream)
+		pipe = r.pipeline()
+		index = 0
+		parentTopic = mqttutil.gen_redis_topic_key('$ROOT')
+		while True:
+			index = topic.find('/', index + 1)
+			currentTopic = topic[:index] if index <> -1 else topic
+			pipe.sadd(parentTopic, topic)
+			if index == -1:
+				break
+			parentTopic = mqttutil.gen_redis_topic_key(currentTopic)
+		pipe.set(mqttutil.gen_redis_retain_msg_key(topic), messageStream)
+		pipe.execute()
 
 	def removeRetainMessage(self, topic):
 		if not mqttutil.pub_topic_check(topic):
 			raise Exception('Invalid topic format')
 		r = self.__r__()
-		r.delete(mqttutil.gen_redis_retain_msg_key(topic))
+		if r.delete(mqttutil.gen_redis_retain_msg_key(topic)) > 0:
+			topic_ = topic
+			while True:
+				if not self.checkEmptyTopic(topic_):
+					break
+				parentTopic = mqttutil.fetch_parent_topic(topic_)
+				r.srem(mqttutil.gen_redis_topic_key(parentTopic), topic_)
+				topic_ = parentTopic
 
 	def fetchRetainMessage(self, topic):
 		if not mqttutil.pub_topic_check(topic):

@@ -42,7 +42,6 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __read_fix_header_byte_1(self, buff):
-		pdb.set_trace()
 		pack = {}
 		(buff,) = struct.unpack('!B', buff)
 		pack['cmd'] = buff
@@ -124,7 +123,6 @@ class MqttConnection():
 		retain_messages = []
 		offset = 0
 		while True:
-			pdb.set_trace()
 			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
@@ -133,6 +131,7 @@ class MqttConnection():
 			self.subscribe(topic, qos)
 			#self.subscribes[topic] = True
 			qoss.append(qos)
+			pdb.set_trace()
 			retain_messages_ = self.redis().fetchRetainMessages(topic)
 			for retain_message in retain_messages_:
 				qos = retain_message.qos if qos > retain_message.qos else qos
@@ -142,7 +141,6 @@ class MqttConnection():
 				message_.qos = qos
 				retain_messages.append(message_)
 		yield self.__send_suback(message_id, qoss)
-		pdb.set_trace()
 		for retain_message in retain_messages:
 			yield self.send_publish(
 				retain_message.qos, 
@@ -362,11 +360,10 @@ class MqttConnection():
 
 	@classmethod
 	def build_publish_message(cls, message_id, qos, topic, payload, retain):
-		#topic = str(topic) # TODO So ugly !!! :(
 		payload_ = bytearray()
-		payload_.extend(struct.pack('!%ss' % len(payload), payload))
+		payload_.extend(struct.pack('!%ss' % len(payload), str(payload))) # TODO So ugly :(
 		topic_ = bytearray()
-		bare_topic_ = struct.pack('!%ss' % len(topic), topic)
+		bare_topic_ = struct.pack('!%ss' % len(topic), str(topic)) # TODO So ugly :(
 		topic_.extend(struct.pack('!H', len(bare_topic_)))
 		topic_.extend(bare_topic_)
 		variable_header_length = 0
@@ -569,7 +566,6 @@ class MqttConnection():
 		multiplier = 1
 		value = 0
 		while True:
-			pdb.set_trace()
 			digit = yield self.stream.read_bytes(1)
 			(digit,) = struct.unpack('!B', digit)
 			value += (digit & 127) * multiplier

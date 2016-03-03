@@ -38,6 +38,7 @@ class MqttServer(TCPServer):
 		if client_id is None or len(client_id) == 0:
 			raise Exception('Missing argument \'client_id\'')
 		self.__SESSIONS__.save(connection)
+		self.__REDIS__.setSession(client_id, connection.session_id)
 		
 		# TODO Check whether the client has been log in the cluster
 		#original = self.__CONNECTIONS__.get(connection.client_id, None)
@@ -59,6 +60,7 @@ class MqttServer(TCPServer):
 
 	def cleanSession(self, client_id):
 		self.__SESSIONS__.remove(client_id=client_id)
+		self.__REDIS__.removeSession(client_id)
 
 	def cleanSessionState(self, client_id):
 		self.__REDIS__.clearSubscription(client_id)
@@ -90,7 +92,6 @@ class MqttServer(TCPServer):
 
 	def subscribe(self, connection, topic, qos):
 		# remove clean_session
-		pdb.set_trace()
 		self.__REDIS__.addSubscription(
 			topic, connection.client_id, qos)
 			#execute_result = MariaDB.current().add_subscribe({
@@ -118,8 +119,8 @@ class MqttServer(TCPServer):
 			raise gen.Return(None)
 		if message.retain:
 			# TODO If Payload length is equal to 0, then delete the original retain messages
-			#if len(message.payload) == 0:
-			#	self.__REDIS__.removeRetainMessage(message.topic)
+			if len(message.payload) == 0:
+				self.__REDIS__.removeRetainMessage(message.topic)
 			self.__REDIS__.setRetainMessage(message)
 			#self.__SUBSCRIBES__.set_retain_message(message)
 			#execute_result = MariaDB.current().add_retain_message(message)
@@ -139,7 +140,6 @@ class MqttServer(TCPServer):
 					# Temp
 					connection = self.__SESSIONS__.get(session_id=session_id)
 					if connection is not None:
-						pdb.set_trace()
 						yield connection.send_publish(
 							qos_, message.topic, message.payload, 0x0)
 					continue
@@ -172,7 +172,6 @@ class MqttServer(TCPServer):
                 self.__REDIS__.addOutgoingMessage(client_id, message)
 				
 	def handle_stream(self, stream, address):
-		pdb.set_trace()
 		connection = MqttConnection(self, stream, address)
 		connection.wait()
 
