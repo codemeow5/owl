@@ -42,6 +42,7 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __read_fix_header_byte_1(self, buff):
+		pdb.set_trace()
 		pack = {}
 		(buff,) = struct.unpack('!B', buff)
 		pack['cmd'] = buff
@@ -123,6 +124,7 @@ class MqttConnection():
 		retain_messages = []
 		offset = 0
 		while True:
+			pdb.set_trace()
 			(topic, offset) = self.__read_next_string(payload, offset)
 			if topic is None:
 				break
@@ -140,6 +142,7 @@ class MqttConnection():
 				message_.qos = qos
 				retain_messages.append(message_)
 		yield self.__send_suback(message_id, qoss)
+		pdb.set_trace()
 		for retain_message in retain_messages:
 			yield self.send_publish(
 				retain_message.qos, 
@@ -359,8 +362,9 @@ class MqttConnection():
 
 	@classmethod
 	def build_publish_message(cls, message_id, qos, topic, payload, retain):
+		#topic = str(topic) # TODO So ugly !!! :(
 		payload_ = bytearray()
-		payload_.extend(struct.pack('!%ss' % len(payload), str(payload)))
+		payload_.extend(struct.pack('!%ss' % len(payload), payload))
 		topic_ = bytearray()
 		bare_topic_ = struct.pack('!%ss' % len(topic), topic)
 		topic_.extend(struct.pack('!H', len(bare_topic_)))
@@ -396,12 +400,6 @@ class MqttConnection():
 		print 'Send Publish(Binary): Buffer is "%s", QoS is %s, Message Type is %s' % \
 			(message.buffer, message.qos, message.message_type)
 		yield self.write(message)
-
-	@classmethod
-	def save_off(cls, client_id, message_id, qos, topic, payload, retain):
-		message = MqttConnection.build_publish_message(message_id, qos, topic, payload, retain)
-		#MariaDB.current().add_outgoing_message(client_id, message)
-		self.redis().addOutgoingMessage(client_id, message)
 
 	@gen.coroutine
 	def publish_message(self, message):
@@ -449,6 +447,7 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
+		pdb.set_trace()
 		if self.state == 'CONNECTED':
 			self.close('Process a second CONNECT Packet sent from '
 				'a Client as a protocol violation and disconnect the Client')
@@ -570,6 +569,7 @@ class MqttConnection():
 		multiplier = 1
 		value = 0
 		while True:
+			pdb.set_trace()
 			digit = yield self.stream.read_bytes(1)
 			(digit,) = struct.unpack('!B', digit)
 			value += (digit & 127) * multiplier

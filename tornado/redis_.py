@@ -224,6 +224,12 @@ class RedisStorage():
 		r = self.__r__()
 		r.set(mqttutil.gen_redis_retain_msg_key(topic), messageStream)
 
+	def removeRetainMessage(self, topic):
+		if not mqttutil.pub_topic_check(topic):
+			raise Exception('Invalid topic format')
+		r = self.__r__()
+		r.delete(mqttutil.gen_redis_retain_msg_key(topic))
+
 	def fetchRetainMessage(self, topic):
 		if not mqttutil.pub_topic_check(topic):
 			raise Exception('Invalid topic format')

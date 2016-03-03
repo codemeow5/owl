@@ -90,6 +90,7 @@ class MqttServer(TCPServer):
 
 	def subscribe(self, connection, topic, qos):
 		# remove clean_session
+		pdb.set_trace()
 		self.__REDIS__.addSubscription(
 			topic, connection.client_id, qos)
 			#execute_result = MariaDB.current().add_subscribe({
@@ -116,6 +117,9 @@ class MqttServer(TCPServer):
 		if message is None:
 			raise gen.Return(None)
 		if message.retain:
+			# TODO If Payload length is equal to 0, then delete the original retain messages
+			#if len(message.payload) == 0:
+			#	self.__REDIS__.removeRetainMessage(message.topic)
 			self.__REDIS__.setRetainMessage(message)
 			#self.__SUBSCRIBES__.set_retain_message(message)
 			#execute_result = MariaDB.current().add_retain_message(message)
@@ -130,18 +134,21 @@ class MqttServer(TCPServer):
 				if qos_ > message.qos:
 					qos_ = message.qos
 				session_id = self.__REDIS__.fetchSession(client_id)
-				if session_id is None:
-					# Offline message
-					message_id = self.fetch_message_id()
-					self.save_offline_message(
-						client_id, message_id, qos_, message.topic, message.payload, 0x0)
-				else:
+				if session_id is not None:
 					# TODO Send message from remote Broker
 					# Temp
 					connection = self.__SESSIONS__.get(session_id=session_id)
 					if connection is not None:
-						connection.send_publish(
+						pdb.set_trace()
+						yield connection.send_publish(
 							qos_, message.topic, message.payload, 0x0)
+					continue
+				# Offline message
+				if qos_ <> 0:
+					message_id = self.fetch_message_id()
+					self.save_offline_message(
+						client_id, message_id, qos_, 
+						message.topic, message.payload, 0x0)
 					
 			#for (client_id, client_info) in clients.items():
 			#	connection = client_info.get('connection', None)
@@ -165,6 +172,7 @@ class MqttServer(TCPServer):
                 self.__REDIS__.addOutgoingMessage(client_id, message)
 				
 	def handle_stream(self, stream, address):
+		pdb.set_trace()
 		connection = MqttConnection(self, stream, address)
 		connection.wait()
 
