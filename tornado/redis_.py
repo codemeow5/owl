@@ -57,11 +57,10 @@ class RedisStorage():
 	def __init__(self):
 		pass
 
-	def addUnreleasedMessage(self, client_id, message):
+	def addUnreleasedMessage(self, client_id, message_id, message):
 		if client_id is None or message is None:
 			return
 		r = self.__r__()
-		message_id = message.message_id
 		messageStream = message.SerializeToString()
 		r.hset(mqttutil.gen_redis_unrel_key(client_id), message_id, messageStream)
 
@@ -109,7 +108,6 @@ class RedisStorage():
 			return
 		r = self.__r__()
 		message_id = message.message_id
-		message.buffer_ = binascii.b2a_uu(message.buffer)
 		messageStream = message.SerializeToString()
 		r.hset(mqttutil.gen_redis_outgoing_key(client_id), message_id, messageStream)
 
@@ -132,7 +130,6 @@ class RedisStorage():
 		messageStream = r.hget(mqttutil.gen_redis_outgoing_key(client_id), message_id)
 		message = NetworkMessage()
 		message.ParseFromString(messageStream)
-		message.buffer = binascii.a2b_uu(message.buffer_)
 		return message
 
 	def fetchOutgoingMessageIds(self, client_id):
