@@ -12,6 +12,8 @@ MANIFEST
 /.coverage
 /htmlcov/
 /env/
+# Used in demo apps
+secrets.cfg
 
-# Custom files
+# Owl files
 owl.config
