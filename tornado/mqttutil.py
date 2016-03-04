@@ -7,7 +7,7 @@ from tornado.options import OptionParser
 options = OptionParser()
 options.define("address", default='127.0.0.1')
 options.define("port", default='1883')
-options.parse_config_file(os.path.join(os.getcwd(), "owl.cfg"))
+options.parse_config_file(os.path.join(os.getcwd(), "owl.config"))
 
 def sub_topic_check(topic):
 	c = '\0'

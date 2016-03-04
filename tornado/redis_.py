@@ -10,7 +10,7 @@ from tornado.proto.mqttmessage_pb2 import MqttMessage, NetworkMessage
 options = OptionParser()
 options.define("redis_address", default='127.0.0.1')
 options.define("redis_port", default='6379')
-options.parse_config_file(os.path.join(os.getcwd(), "owl.cfg"))
+options.parse_config_file(os.path.join(os.getcwd(), "owl.config"))
 
 # TODO Sharing session state between multiple broker process
 class BrokerRedisStorage():
