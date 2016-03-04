@@ -30,6 +30,10 @@ class MqttServer(TCPServer):
 			connection.close()
 		pass
 
+	def checkConnectionState(self, session_id):
+		# TODO Access to the remote broker, and check client connection status
+		return False
+
 	def fetchSession(self, client_id):
 		return self.__REDIS__.fetchSession(client_id)
 
@@ -121,7 +125,8 @@ class MqttServer(TCPServer):
 			# TODO If Payload length is equal to 0, then delete the original retain messages
 			if len(message.payload) == 0:
 				self.__REDIS__.removeRetainMessage(message.topic)
-			self.__REDIS__.setRetainMessage(message)
+			else:
+				self.__REDIS__.setRetainMessage(message)
 			#self.__SUBSCRIBES__.set_retain_message(message)
 			#execute_result = MariaDB.current().add_retain_message(message)
 			#if not execute_result:
@@ -132,6 +137,7 @@ class MqttServer(TCPServer):
 			#clients = node.get_clients()
 			clients = self.__REDIS__.fetchSubClients(topic)
 			for (client_id, qos_) in clients.items(): 
+				qos_ = int(qos_) # Fuck the Redis !
 				if qos_ > message.qos:
 					qos_ = message.qos
 				session_id = self.__REDIS__.fetchSession(client_id)

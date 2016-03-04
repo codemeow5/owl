@@ -131,7 +131,6 @@ class MqttConnection():
 			self.subscribe(topic, qos)
 			#self.subscribes[topic] = True
 			qoss.append(qos)
-			pdb.set_trace()
 			retain_messages_ = self.redis().fetchRetainMessages(topic)
 			for retain_message in retain_messages_:
 				qos = retain_message.qos if qos > retain_message.qos else qos
@@ -239,6 +238,7 @@ class MqttConnection():
 			yield self.__send_puback(message_id)
 			raise gen.Return(None)
 		if qos == QoS2:
+			print 'Message Id is %s' % message_id
 			self.unreleased_messages[message_id] = message
 			#if not self.clean_session:
 				#MariaDB.current().add_unreleased_message(
@@ -405,6 +405,9 @@ class MqttConnection():
 	def closeConnection(self, session_id):
 		return self.server.closeConnection(session_id)
 
+	def checkConnectionState(self, session_id):
+		return self.server.checkConnectionState(session_id)
+
 	def fetchSession(self, client_id):
 		return self.server.fetchSession(client_id)
 
@@ -444,7 +447,6 @@ class MqttConnection():
 
 	@gen.coroutine
 	def __handle_connect(self, pack):
-		pdb.set_trace()
 		if self.state == 'CONNECTED':
 			self.close('Process a second CONNECT Packet sent from '
 				'a Client as a protocol violation and disconnect the Client')
@@ -498,7 +500,8 @@ class MqttConnection():
 		self.clean_session = connect_flags & 0x2 == 0x2
 		print 'clean_session: %s' % self.clean_session
 		originalSession = self.fetchSession(client_id)
-		if originalSession is not None:
+		if originalSession is not None and \
+			self.checkConnectionState(originalSession):
 			if self.protocol_version == 0x3:
 				self.closeConnection(originalSession)
 			elif self.protocol_version == 0x4:

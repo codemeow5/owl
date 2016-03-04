@@ -96,11 +96,13 @@ class RedisStorage():
 			return
 		r = self.__r__()
 		messageStreams = r.hvals(mqttutil.gen_redis_unrel_key(client_id))
-		messages = []
+		messages = {}
 		for messageStream in messageStreams:
 			message = NetworkMessage()
 			message.ParseFromString(messageStream)
-			messages.append(message)
+			message_id = message.message_id
+			if message_id is not None:
+				messages[message_id] = message
 		return messages
 
 	def addOutgoingMessage(self, client_id, message):
@@ -178,10 +180,10 @@ class RedisStorage():
 		index = 0
 		parentTopic = mqttutil.gen_redis_topic_key('$ROOT')
 		while True:
-			index = topic.find('/', index + 1)
-			currentTopic = topic[:index] if index <> -1 else topic
-			pipe.sadd(parentTopic, topic)
-			if index == -1:
+			index = topic.find('/', index) + 1
+			currentTopic = topic[:index - 1] if index > 0 else topic
+			pipe.sadd(parentTopic, currentTopic)
+			if index == 0:
 				break
 			parentTopic = mqttutil.gen_redis_topic_key(currentTopic)
 		pipe.hset(mqttutil.gen_redis_sub_key(topic), client_id, qos)
@@ -193,13 +195,13 @@ class RedisStorage():
 			raise Exception('Invalid topic format')
 		r = self.__r__()
 		if r.hdel(mqttutil.gen_redis_sub_key(topic), client_id) > 0:
-			topic_ = topic
+			currentTopic = topic
 			while True:
-				if not self.checkEmptyTopic(topic_):
+				if not self.checkEmptyTopic(currentTopic):
 					break
-				parentTopic = mqttutil.fetch_parent_topic(topic_)
-				r.srem(mqttutil.gen_redis_topic_key(parentTopic), topic_)
-				topic_ = parentTopic
+				parentTopic = mqttutil.fetch_parent_topic(currentTopic)
+				r.srem(mqttutil.gen_redis_topic_key(parentTopic), currentTopic)
+				currentTopic = parentTopic
 		r.srem(mqttutil.gen_redis_client_sub_key(client_id), topic)
 
 	def fetchSubClients(self, topic):
@@ -226,10 +228,10 @@ class RedisStorage():
 		index = 0
 		parentTopic = mqttutil.gen_redis_topic_key('$ROOT')
 		while True:
-			index = topic.find('/', index + 1)
-			currentTopic = topic[:index] if index <> -1 else topic
-			pipe.sadd(parentTopic, topic)
-			if index == -1:
+			index = topic.find('/', index) + 1
+			currentTopic = topic[:index - 1] if index > 0 else topic
+			pipe.sadd(parentTopic, currentTopic)
+			if index == 0:
 				break
 			parentTopic = mqttutil.gen_redis_topic_key(currentTopic)
 		pipe.set(mqttutil.gen_redis_retain_msg_key(topic), messageStream)
@@ -240,13 +242,13 @@ class RedisStorage():
 			raise Exception('Invalid topic format')
 		r = self.__r__()
 		if r.delete(mqttutil.gen_redis_retain_msg_key(topic)) > 0:
-			topic_ = topic
+			currentTopic = topic
 			while True:
-				if not self.checkEmptyTopic(topic_):
+				if not self.checkEmptyTopic(currentTopic):
 					break
-				parentTopic = mqttutil.fetch_parent_topic(topic_)
-				r.srem(mqttutil.gen_redis_topic_key(parentTopic), topic_)
-				topic_ = parentTopic
+				parentTopic = mqttutil.fetch_parent_topic(currentTopic)
+				r.srem(mqttutil.gen_redis_topic_key(parentTopic), currentTopic)
+				currentTopic = parentTopic
 
 	def fetchRetainMessage(self, topic):
 		if not mqttutil.pub_topic_check(topic):
@@ -278,8 +280,8 @@ class RedisStorage():
 		index = 0
 		while True:
 			preIndex = index
-			index = topic.find('/', index + 1)
-			currentWord = topic[preIndex:index] if index <> -1 else topic[preIndex:]
+			index = topic.find('/', index) + 1
+			currentWord = topic[preIndex:index - 1] if index > 0 else topic[preIndex:]
 			parentTopics_ = parentTopics
 			parentTopics = []
 			r = self.__r__()
@@ -294,12 +296,12 @@ class RedisStorage():
 							parentTopics.append(childrenTopic)
 				else:
 					childrenTopic = parentTopic + '/' + currentWord \
-						if preIndex <> 0 else currentWord
+						if preIndex > 0 else currentWord
 					if r.sismember(
 						mqttutil.gen_redis_topic_key(parentTopic), 
 						childrenTopic):
 						parentTopics.append(childrenTopic)
-			if index == -1:
+			if index == 0:
 				matches.extend(parentTopics)
 				break
 		return matches
@@ -313,34 +315,34 @@ class RedisStorage():
 		index = 0
 		while True:
 			preIndex = index
-			index = topic.find('/', index + 1)
-			currentWord = topic[preIndex:index] if index <> -1 else topic[preIndex:]
+			index = topic.find('/', index) + 1
+			currentWord = topic[preIndex:index - 1] if index > 0 else topic[preIndex:]
 			parentTopics_ = parentTopics
 			parentTopics = []
 			r = self.__r__()
 			for parentTopic in parentTopics_:
 				childrenTopic = parentTopic + '/' + currentWord \
-					if preIndex <> 0 else currentWord
+					if preIndex > 0 else currentWord
 				if childrenTopic is not None:
 					if r.sismember(
 						mqttutil.gen_redis_topic_key(parentTopic),
 						childrenTopic):
 						parentTopics.append(childrenTopic)
 				childrenTopic = parentTopic + '/' + '+' \
-					if preIndex <> 0 else '+'
+					if preIndex > 0 else '+'
 				if childrenTopic is not None:
 					if r.sismember(
 						mqttutil.gen_redis_topic_key(parentTopic),
 						childrenTopic):
 						parentTopics.append(childrenTopic)
 				childrenTopic = parentTopic + '/' + '#' \
-					if preIndex <> 0 else '#'
+					if preIndex > 0 else '#'
 				if childrenTopic is not None:
 					if r.sismember(
 						mqttutil.gen_redis_topic_key(parentTopic),
 						childrenTopic):
 						matches.append(childrenTopic)
-			if index == -1:
+			if index == 0:
 				matches.extend(parentTopics)
 				break
 		return matches
@@ -353,8 +355,7 @@ class RedisStorage():
 		for childrenTopic in childrenTopics:
 			if mqttutil.pub_topic_check(childrenTopic):
 				resultTopics.append(childrenTopic)
-				resultTopics.extend(
-					self.flatSubscription(childrenTopic, resultTopics))
+				self.flatSubscription(childrenTopic, resultTopics)
 		return resultTopics
 
 
