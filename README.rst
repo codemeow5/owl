@@ -1,7 +1,7 @@
 Owl Mqtt Server
 ==================
 
-.. image:: owl.png
+.. image:: logo.png
 
 Installation
 -----------------
